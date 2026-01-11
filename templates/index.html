@@ -1109,6 +1109,32 @@
             }
         }
         
+        // Calculate statistics from chunks list
+        function calculateStatistics(chunks) {
+            if (!chunks || chunks.length === 0) {
+                return {
+                    total_chunks: 0,
+                    avg_len: 0,
+                    min_len: 0,
+                    max_len: 0
+                };
+            }
+            
+            const lengths = chunks.map(chunk => chunk.len_chars || 0);
+            const total = lengths.length;
+            const sum = lengths.reduce((a, b) => a + b, 0);
+            const avg = total > 0 ? (sum / total) : 0;
+            const min = Math.min(...lengths);
+            const max = Math.max(...lengths);
+            
+            return {
+                total_chunks: total,
+                avg_len: Math.round(avg * 100) / 100, // Round to 2 decimal places
+                min_len: min,
+                max_len: max
+            };
+        }
+        
         // Render statistics
         function renderStatistics(stats) {
             const statsDiv = document.getElementById('chunk-statistics');
@@ -1149,6 +1175,10 @@
             if (filteredFilename) {
                 filteredChunks = allChunks.filter(chunk => chunk.filename === filteredFilename);
             }
+            
+            // Calculate and update statistics for filtered chunks
+            const stats = calculateStatistics(filteredChunks);
+            renderStatistics(stats);
             
             // Display first page
             displayedChunks = filteredChunks.slice(0, chunksPerPage);
