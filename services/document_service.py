@@ -1,5 +1,6 @@
 """
 Document Service - Handle upload, list, discover documents
+Works directly with filesystem, no database required
 """
 import os
 from pathlib import Path
@@ -17,13 +18,12 @@ def secure_filename(filename: str) -> str:
     return filename.strip('-_')
 
 from config import DATA_DIR, ALLOWED_EXTENSIONS
-from database import get_db_connection, execute_query
 from models import Document
 
 logger = logging.getLogger(__name__)
 
 class DocumentService:
-    """Service to manage documents"""
+    """Service to manage documents from filesystem"""
     
     @staticmethod
     def is_allowed_file(filename: str) -> bool:
@@ -92,35 +92,21 @@ class DocumentService:
         return filepath
     
     @staticmethod
-    def register_document(filepath: Path, stats: dict) -> int:
-        """Register document in database"""
-        filename = filepath.name
+    def filepath_to_document(filepath: Path) -> Document:
+        """Convert filepath to Document object"""
+        stats = DocumentService.analyze_file(filepath)
+        file_stat = filepath.stat()
         
-        # Check if already exists
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT doc_id FROM documents WHERE filename = ?', (filename,))
-        existing = cursor.fetchone()
-        
-        if existing:
-            # Update existing
-            doc_id = existing['doc_id']
-            cursor.execute('''
-                UPDATE documents 
-                SET num_lines = ?, num_chars = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE doc_id = ?
-            ''', (stats['num_lines'], stats['num_chars'], stats['file_size'], doc_id))
-        else:
-            # Insert new
-            cursor.execute('''
-                INSERT INTO documents (filename, filepath, num_lines, num_chars, file_size)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (filename, str(filepath), stats['num_lines'], stats['num_chars'], stats['file_size']))
-            doc_id = cursor.lastrowid
-        
-        conn.commit()
-        conn.close()
-        return doc_id
+        return Document(
+            doc_id=None,  # No database ID needed
+            filename=filepath.name,
+            filepath=str(filepath),
+            num_lines=stats['num_lines'],
+            num_chars=stats['num_chars'],
+            file_size=stats['file_size'],
+            created_at=datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
+            updated_at=datetime.fromtimestamp(file_stat.st_mtime).isoformat()
+        )
     
     @staticmethod
     def discover_documents() -> List[Document]:
@@ -133,58 +119,39 @@ class DocumentService:
         
         for filepath in DATA_DIR.iterdir():
             if filepath.is_file() and DocumentService.is_allowed_file(filepath.name):
-                stats = DocumentService.analyze_file(filepath)
-                doc_id = DocumentService.register_document(filepath, stats)
-                
-                # Get document from DB
-                doc = DocumentService.get_document_by_id(doc_id)
-                if doc:
-                    documents.append(doc)
+                doc = DocumentService.filepath_to_document(filepath)
+                documents.append(doc)
         
         logger.info(f"Discovered {len(documents)} documents")
         return documents
     
     @staticmethod
     def get_all_documents(search: Optional[str] = None) -> List[Document]:
-        """Get all documents, optionally filter by search"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        """Get all documents from filesystem, optionally filter by search"""
+        documents = DocumentService.discover_documents()
         
         if search:
-            cursor.execute('''
-                SELECT * FROM documents 
-                WHERE filename LIKE ?
-                ORDER BY created_at DESC
-            ''', (f'%{search}%',))
-        else:
-            cursor.execute('SELECT * FROM documents ORDER BY created_at DESC')
+            search_lower = search.lower()
+            documents = [doc for doc in documents if search_lower in doc.filename.lower()]
         
-        rows = cursor.fetchall()
-        conn.close()
+        # Sort by filename
+        documents.sort(key=lambda x: x.filename)
         
-        return [Document.from_row(row) for row in rows]
+        return documents
     
     @staticmethod
-    def get_document_by_id(doc_id: int) -> Optional[Document]:
-        """Get document by ID"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM documents WHERE doc_id = ?', (doc_id,))
-        row = cursor.fetchone()
-        conn.close()
-        
-        if row:
-            return Document.from_row(row)
-        return None
-    
-    @staticmethod
-    def get_document_content(doc_id: int) -> Optional[str]:
-        """Get document content"""
-        doc = DocumentService.get_document_by_id(doc_id)
-        if not doc:
+    def get_document_by_filename(filename: str) -> Optional[Document]:
+        """Get document by filename"""
+        filepath = DATA_DIR / filename
+        if not filepath.exists() or not DocumentService.is_allowed_file(filename):
             return None
         
-        filepath = Path(doc.filepath)
+        return DocumentService.filepath_to_document(filepath)
+    
+    @staticmethod
+    def get_document_content(filename: str) -> Optional[str]:
+        """Get document content by filename"""
+        filepath = DATA_DIR / filename
         if not filepath.exists():
             return None
         
@@ -196,16 +163,11 @@ class DocumentService:
             return None
     
     @staticmethod
-    def get_documents_by_ids(doc_ids: List[int]) -> List[Document]:
-        """Get multiple documents by list of IDs"""
-        if not doc_ids:
-            return []
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        placeholders = ','.join('?' * len(doc_ids))
-        cursor.execute(f'SELECT * FROM documents WHERE doc_id IN ({placeholders})', doc_ids)
-        rows = cursor.fetchall()
-        conn.close()
-        
-        return [Document.from_row(row) for row in rows]
+    def get_documents_by_filenames(filenames: List[str]) -> List[Document]:
+        """Get multiple documents by list of filenames"""
+        documents = []
+        for filename in filenames:
+            doc = DocumentService.get_document_by_filename(filename)
+            if doc:
+                documents.append(doc)
+        return documents

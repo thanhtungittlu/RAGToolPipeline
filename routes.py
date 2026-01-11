@@ -7,7 +7,6 @@ import logging
 from pathlib import Path
 
 from config import DATA_DIR, ALLOWED_EXTENSIONS
-from database import get_db_connection
 from services.document_service import DocumentService
 from services.chunking_service import ChunkingService
 
@@ -69,11 +68,8 @@ def register_routes(app: Flask):
             # Save file
             filepath = DocumentService.save_uploaded_file(file)
             
-            # Analyze and register
-            stats = DocumentService.analyze_file(filepath)
-            doc_id = DocumentService.register_document(filepath, stats)
-            
-            doc = DocumentService.get_document_by_id(doc_id)
+            # Create document object from filepath
+            doc = DocumentService.filepath_to_document(filepath)
             
             return jsonify({
                 'success': True,
@@ -103,11 +99,8 @@ def register_routes(app: Flask):
             # Save text
             filepath = DocumentService.save_pasted_text(text, extension)
             
-            # Analyze and register
-            stats = DocumentService.analyze_file(filepath)
-            doc_id = DocumentService.register_document(filepath, stats)
-            
-            doc = DocumentService.get_document_by_id(doc_id)
+            # Create document object from filepath
+            doc = DocumentService.filepath_to_document(filepath)
             
             return jsonify({
                 'success': True,
@@ -118,11 +111,14 @@ def register_routes(app: Flask):
             logger.error(f"Error pasting text: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
     
-    @app.route('/api/documents/<int:doc_id>/content', methods=['GET'])
-    def get_document_content(doc_id):
+    @app.route('/api/documents/<filename>/content', methods=['GET'])
+    def get_document_content(filename):
         """API: Get document content"""
         try:
-            content = DocumentService.get_document_content(doc_id)
+            from urllib.parse import unquote
+            filename = unquote(filename)  # Decode URL-encoded filename
+            
+            content = DocumentService.get_document_content(filename)
             if content is None:
                 return jsonify({'success': False, 'error': 'Document not found'}), 404
             
@@ -204,32 +200,32 @@ def register_routes(app: Flask):
             if not data:
                 return jsonify({'success': False, 'error': 'No data provided'}), 400
             
-            doc_ids = data.get('doc_ids', [])
+            filenames = data.get('filenames', [])
             strategy = data.get('strategy', '')
             params = data.get('params', {})
             
-            if not doc_ids:
+            if not filenames:
                 return jsonify({'success': False, 'error': 'No documents selected'}), 400
             
             if not strategy:
                 return jsonify({'success': False, 'error': 'No strategy selected'}), 400
             
-            # Validate doc_ids exist
-            documents = DocumentService.get_documents_by_ids(doc_ids)
-            if len(documents) != len(doc_ids):
+            # Validate filenames exist
+            documents = DocumentService.get_documents_by_filenames(filenames)
+            if len(documents) != len(filenames):
                 return jsonify({'success': False, 'error': 'Some documents not found'}), 400
             
             # Run chunking
-            chunks = ChunkingService.chunk_multiple_documents(doc_ids, strategy, params)
+            chunks = ChunkingService.chunk_multiple_documents(filenames, strategy, params)
             
             # Get statistics
-            stats = ChunkingService.get_chunk_statistics(doc_ids, strategy)
+            stats = ChunkingService.get_chunk_statistics(chunks)
             
             return jsonify({
                 'success': True,
                 'message': f'Created {len(chunks)} chunks',
                 'statistics': stats,
-                'chunks': [chunk.to_dict() for chunk in chunks[:10]]  # Preview first 10 chunks
+                'chunks': chunks  # Return all chunks (no database, so return all)
             })
         except Exception as e:
             logger.error(f"Error running chunking: {e}")
@@ -237,40 +233,13 @@ def register_routes(app: Flask):
     
     @app.route('/api/chunks', methods=['GET'])
     def get_chunks():
-        """API: Get chunks with pagination"""
-        try:
-            doc_id = request.args.get('doc_id', type=int)
-            strategy = request.args.get('strategy', '')
-            limit = request.args.get('limit', 10, type=int)
-            offset = request.args.get('offset', 0, type=int)
-            
-            if doc_id:
-                chunks = ChunkingService.get_chunks_by_doc(doc_id, strategy if strategy else None)
-                # Apply pagination manually
-                total = len(chunks)
-                chunks = chunks[offset:offset+limit]
-            else:
-                if not strategy:
-                    return jsonify({'success': False, 'error': 'doc_id or strategy required'}), 400
-                # Get total count
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute('SELECT COUNT(*) FROM chunks WHERE strategy = ?', (strategy,))
-                total = cursor.fetchone()[0]
-                conn.close()
-                
-                chunks = ChunkingService.get_chunks_by_strategy(strategy, limit, offset)
-            
-            return jsonify({
-                'success': True,
-                'chunks': [chunk.to_dict() for chunk in chunks],
-                'total': total,
-                'limit': limit,
-                'offset': offset
-            })
-        except Exception as e:
-            logger.error(f"Error getting chunks: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
+        """API: Get chunks with pagination (stored in session/memory - not implemented)"""
+        # This endpoint is not needed without database
+        # Chunks are returned directly from /api/chunking/run
+        return jsonify({
+            'success': False,
+            'error': 'Chunks are returned directly from /api/chunking/run endpoint'
+        }), 400
     
     @app.errorhandler(404)
     def not_found(error):

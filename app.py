@@ -8,7 +8,7 @@ Setup Instructions:
 3. Open browser: http://localhost:5000
 
 Architecture:
-- Storage: models.py, database.py
+- Storage: models.py (data models only, no database)
 - Services: document_service.py, chunking_service.py
 - Routes: routes.py
 - Templates: templates/index.html
@@ -16,17 +16,15 @@ Architecture:
 
 from flask import Flask
 from routes import register_routes
-from database import init_db
 import logging
 from pathlib import Path
-from config import LOG_FILE, DATA_DIR
+from config import DATA_DIR
 
-# Setup logging
+# Setup logging - console only
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(LOG_FILE),
         logging.StreamHandler()
     ]
 )
@@ -38,9 +36,6 @@ def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = 'dev-secret-key-change-in-production'
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-    
-    # Initialize database
-    init_db()
     
     # Register routes
     register_routes(app)

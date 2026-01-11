@@ -42,13 +42,3 @@ OLLAMA_LLM_MODEL = os.getenv('OLLAMA_LLM_MODEL', 'llama3.2:3b')
 
 # Backward compatibility
 OLLAMA_MODEL = OLLAMA_EMBEDDING_MODEL
-
-# Logging
-LOG_FILE_STR = os.getenv('LOG_FILE', '').strip()
-if LOG_FILE_STR:
-    LOG_FILE = Path(LOG_FILE_STR).resolve()
-    LOG_DIR = LOG_FILE.parent
-else:
-    LOG_DIR = BASE_DIR / "logs"
-    LOG_FILE = LOG_DIR / "app.log"
-LOG_DIR.mkdir(parents=True, exist_ok=True)

@@ -1,5 +1,6 @@
 """
 Chunking Service - Handle chunking with multiple strategies
+Works without database - returns chunks directly
 """
 import re
 import json
@@ -12,7 +13,6 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from database import get_db_connection
 from models import Chunk
 from services.document_service import DocumentService
 from config import (
@@ -289,17 +289,17 @@ class ChunkingService:
     @staticmethod
     def semantic_chunk(text: str, chunk_size: int = 500, model: str = "ollama", ollama_url: Optional[str] = None, ollama_model: Optional[str] = None) -> List[str]:
         """
-        Semantic chunking thực sự sử dụng embeddings từ Ollama server
+        Semantic chunking using embeddings from Ollama server
         
         Args:
-            text: Text cần chunk
-            chunk_size: Kích thước chunk mong muốn (ký tự)
-            model: "ollama" (mặc định) hoặc "sentence-transformers" (fallback)
-            ollama_url: URL của Ollama API (mặc định http://localhost:11434)
-            ollama_model: Tên model cụ thể (nếu không dùng mặc định từ config)
+            text: Text to chunk
+            chunk_size: Desired chunk size (characters)
+            model: "ollama" (default) or "sentence-transformers" (fallback)
+            ollama_url: Ollama API URL (default http://localhost:11434)
+            ollama_model: Specific model name (if not using default from config)
         
         Returns:
-            List các chunks
+            List of chunks
         """
         if not text:
             return []
@@ -436,12 +436,12 @@ class ChunkingService:
         return chunks if chunks else [text]
     
     @staticmethod
-    def chunk_document(doc_id: int, strategy: str, params: Dict[str, Any]) -> List[Chunk]:
-        """Chunk a document with given strategy and params"""
+    def chunk_document(filename: str, strategy: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Chunk a document with given strategy and params - returns chunks as dicts (no database)"""
         # Get document content
-        content = DocumentService.get_document_content(doc_id)
+        content = DocumentService.get_document_content(filename)
         if not content:
-            logger.warning(f"Document {doc_id} has no content")
+            logger.warning(f"Document {filename} has no content")
             return []
         
         # Select strategy and chunk
@@ -485,113 +485,51 @@ class ChunkingService:
             logger.error(f"Unknown strategy: {strategy}")
             return []
         
-        # Save chunks to database
-        saved_chunks = []
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Delete old chunks for this document with this strategy (if any)
-        cursor.execute('DELETE FROM chunks WHERE doc_id = ? AND strategy = ?', (doc_id, strategy))
-        
+        # Convert to dict format (no database)
         params_json = json.dumps(params)
+        chunks = []
         
         for position, chunk_text in enumerate(chunks_text, start=1):
             len_chars = len(chunk_text)
-            cursor.execute('''
-                INSERT INTO chunks (doc_id, strategy, params_json, position, text, len_chars)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (doc_id, strategy, params_json, position, chunk_text, len_chars))
-            
-            chunk_id = cursor.lastrowid
-            saved_chunks.append(Chunk(
-                chunk_id=chunk_id,
-                doc_id=doc_id,
-                strategy=strategy,
-                params_json=params_json,
-                position=position,
-                text=chunk_text,
-                len_chars=len_chars
-            ))
+            chunks.append({
+                'chunk_id': None,
+                'doc_id': None,
+                'filename': filename,
+                'strategy': strategy,
+                'params': params,
+                'position': position,
+                'text': chunk_text,
+                'len_chars': len_chars,
+                'created_at': None
+            })
         
-        conn.commit()
-        conn.close()
-        
-        logger.info(f"Created {len(saved_chunks)} chunks for doc {doc_id} with strategy {strategy}")
-        return saved_chunks
+        logger.info(f"Created {len(chunks)} chunks for {filename} with strategy {strategy}")
+        return chunks
     
     @staticmethod
-    def chunk_multiple_documents(doc_ids: List[int], strategy: str, params: Dict[str, Any]) -> List[Chunk]:
-        """Chunk multiple documents"""
+    def chunk_multiple_documents(filenames: List[str], strategy: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Chunk multiple documents - returns chunks as dicts (no database)"""
         all_chunks = []
-        for doc_id in doc_ids:
-            chunks = ChunkingService.chunk_document(doc_id, strategy, params)
+        for filename in filenames:
+            chunks = ChunkingService.chunk_document(filename, strategy, params)
             all_chunks.extend(chunks)
         return all_chunks
     
     @staticmethod
-    def get_chunks_by_doc(doc_id: int, strategy: Optional[str] = None) -> List[Chunk]:
-        """Get chunks of a document"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
+    def get_chunk_statistics(chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Get chunk statistics from chunks list"""
+        if not chunks:
+            return {
+                'total_chunks': 0,
+                'avg_len': 0,
+                'min_len': 0,
+                'max_len': 0
+            }
         
-        if strategy:
-            cursor.execute('''
-                SELECT * FROM chunks 
-                WHERE doc_id = ? AND strategy = ?
-                ORDER BY position
-            ''', (doc_id, strategy))
-        else:
-            cursor.execute('''
-                SELECT * FROM chunks 
-                WHERE doc_id = ?
-                ORDER BY position
-            ''', (doc_id,))
-        
-        rows = cursor.fetchall()
-        conn.close()
-        
-        return [Chunk.from_row(row) for row in rows]
-    
-    @staticmethod
-    def get_chunks_by_strategy(strategy: str, limit: int = 10, offset: int = 0) -> List[Chunk]:
-        """Get chunks by strategy with pagination"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM chunks 
-            WHERE strategy = ?
-            ORDER BY doc_id, position
-            LIMIT ? OFFSET ?
-        ''', (strategy, limit, offset))
-        
-        rows = cursor.fetchall()
-        conn.close()
-        
-        return [Chunk.from_row(row) for row in rows]
-    
-    @staticmethod
-    def get_chunk_statistics(doc_ids: List[int], strategy: str) -> Dict[str, Any]:
-        """Get chunk statistics"""
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        placeholders = ','.join('?' * len(doc_ids))
-        cursor.execute(f'''
-            SELECT 
-                COUNT(*) as total_chunks,
-                AVG(len_chars) as avg_len,
-                MIN(len_chars) as min_len,
-                MAX(len_chars) as max_len
-            FROM chunks
-            WHERE doc_id IN ({placeholders}) AND strategy = ?
-        ''', doc_ids + [strategy])
-        
-        row = cursor.fetchone()
-        conn.close()
-        
+        lengths = [chunk['len_chars'] for chunk in chunks]
         return {
-            'total_chunks': row['total_chunks'] or 0,
-            'avg_len': round(row['avg_len'] or 0, 2),
-            'min_len': row['min_len'] or 0,
-            'max_len': row['max_len'] or 0
+            'total_chunks': len(chunks),
+            'avg_len': round(sum(lengths) / len(lengths), 2) if lengths else 0,
+            'min_len': min(lengths) if lengths else 0,
+            'max_len': max(lengths) if lengths else 0
         }

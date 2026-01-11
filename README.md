@@ -24,7 +24,6 @@ Then edit `.env` file according to your needs:
 - `OLLAMA_LLM_MODEL`: LLM model for later steps (default: llama3.2:3b)
 - `DATABASE_PATH`: Database path (leave empty to use default)
 - `DATA_DIR`: Directory to store documents (leave empty to use default: ./data)
-- `LOG_FILE`: Log file path (leave empty to use default: ./logs/app.log)
 - `DEFAULT_CHUNK_SIZE`: Default chunk size (default: 500)
 - `DEFAULT_CHUNK_OVERLAP`: Default overlap (default: 50)
 
@@ -61,10 +60,8 @@ OverviewSystemRetrieval/
 │   ├── __init__.py
 │   ├── document_service.py    # Document management
 │   └── chunking_service.py     # Chunking strategies
-├── templates/            # HTML templates
-│   └── index.html       # Single-page UI
-└── logs/                 # Log files
-    └── app.log
+└── templates/            # HTML templates
+    └── index.html       # Single-page UI
 ```
 
 ## 🏗️ Architecture

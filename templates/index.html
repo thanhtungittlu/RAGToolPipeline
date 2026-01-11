@@ -604,7 +604,7 @@
                         
                         <div class="form-group" style="margin-top: 20px;">
                             <label>Filter by Document</label>
-                            <select id="filter-doc" onchange="loadChunks(true)" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; cursor: pointer;">
+                            <select id="filter-doc" onchange="filterChunks()" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; cursor: pointer;">
                                 <option value="">All Documents</option>
                             </select>
                         </div>
@@ -674,11 +674,10 @@
     </div>
     
     <script>
-        let selectedDocIds = [];
+        let selectedFilenames = [];
         let currentStrategy = '';
         let currentChunks = [];
-        let currentPage = 0;
-        const chunksPerPage = 5;
+        let allChunks = []; // Store all chunks from chunking result
         let chunksData = {}; // Lưu full text của chunks để expand
         
         // Initialize
@@ -815,7 +814,7 @@
                 return `
                     <tr>
                         <td>
-                            <input type="checkbox" class="doc-checkbox" value="${doc.doc_id}" 
+                            <input type="checkbox" class="doc-checkbox" value="${escapeHtml(doc.filename)}" 
                                    onchange="updateSelectedDocs()">
                         </td>
                         <td>
@@ -827,7 +826,7 @@
                         <td class="doc-stats">${doc.num_chars.toLocaleString()}</td>
                         <td class="doc-stats">${(doc.file_size / 1024).toFixed(2)} KB</td>
                         <td>
-                            <button onclick="viewDocument(${doc.doc_id}, '${escapeHtml(doc.filename)}')" 
+                            <button onclick="viewDocument('${escapeHtml(doc.filename)}')" 
                                     style="padding: 6px 14px; font-size: 13px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background 0.3s;"
                                     onmouseover="this.style.background='#5568d3'"
                                     onmouseout="this.style.background='#667eea'">View</button>
@@ -932,21 +931,16 @@
         
         // Update selected documents
         function updateSelectedDocs() {
-            selectedDocIds = Array.from(document.querySelectorAll('.doc-checkbox:checked'))
-                .map(cb => parseInt(cb.value));
+            selectedFilenames = Array.from(document.querySelectorAll('.doc-checkbox:checked'))
+                .map(cb => cb.value);
             
             const btn = document.getElementById('chunk-btn');
-            btn.disabled = selectedDocIds.length === 0;
+            btn.disabled = selectedFilenames.length === 0;
             
             // Update selected docs display in step 2
             const selectedDiv = document.getElementById('selected-docs');
-            if (selectedDocIds.length > 0) {
-                fetch('/api/documents')
-                    .then(r => r.json())
-                    .then(data => {
-                        const selected = data.documents.filter(d => selectedDocIds.includes(d.doc_id));
-                        selectedDiv.innerHTML = selected.map(d => d.filename).join(', ');
-                    });
+            if (selectedFilenames.length > 0) {
+                selectedDiv.innerHTML = selectedFilenames.join(', ');
             } else {
                 selectedDiv.innerHTML = 'No documents selected';
             }
@@ -1015,7 +1009,7 @@
         
         // Go to chunking step
         function goToChunking() {
-            if (selectedDocIds.length === 0) return;
+            if (selectedFilenames.length === 0) return;
             
             document.getElementById('step2').scrollIntoView({behavior: 'smooth'});
             document.getElementById('step2').classList.add('active');
@@ -1026,7 +1020,7 @@
         
         // Run chunking
         async function runChunking() {
-            if (selectedDocIds.length === 0) {
+            if (selectedFilenames.length === 0) {
                 showAlert('step2-alerts', 'Please select documents first', 'error');
                 return;
             }
@@ -1066,7 +1060,7 @@
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
-                        doc_ids: selectedDocIds,
+                        filenames: selectedFilenames,
                         strategy: currentStrategy,
                         params: params
                     })
@@ -1078,17 +1072,18 @@
                     showAlert('step2-alerts', data.message, 'success');
                     document.getElementById('step2').classList.add('completed');
                     
+                    // Store all chunks
+                    allChunks = data.chunks || [];
+                    
                     // Show statistics
                     renderStatistics(data.statistics);
                     
                     // Populate filter dropdown với selected documents
                     await populateFilterDropdown();
                     
-                    // Reset pagination
-                    currentPage = 0;
-                    
-                    // Load and display chunks
-                    await loadChunks(true);
+                    // Display all chunks
+                    renderChunks(allChunks);
+                    document.getElementById('chunk-preview-section').style.display = 'block';
                 } else {
                     showAlert('step2-alerts', data.error || 'Chunking failed', 'error');
                 }
@@ -1125,82 +1120,23 @@
             `;
         }
         
-        // Load chunks
-        async function loadChunks(reset = false) {
-            if (reset) {
-                currentPage = 0;
-                chunksData = {};
-            }
-            
+        // Filter chunks by document
+        function filterChunks() {
             const filterSelect = document.getElementById('filter-doc');
             if (!filterSelect) {
-                console.error('Filter dropdown not found');
                 return;
             }
             
-            const filterDocId = filterSelect.value;
-            const docId = filterDocId ? parseInt(filterDocId) : null;
+            const selectedFilename = filterSelect.value;
+            let filteredChunks = allChunks;
             
-            try {
-                let url = `/api/chunks?limit=${chunksPerPage}&offset=${currentPage * chunksPerPage}`;
-                if (docId) {
-                    url += `&doc_id=${docId}&strategy=${currentStrategy}`;
-                } else {
-                    url += `&strategy=${currentStrategy}`;
-                }
-                
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                if (data.success) {
-                    const newChunks = data.chunks;
-                    
-                    if (reset) {
-                        currentChunks = newChunks;
-                    } else {
-                        currentChunks = currentChunks.concat(newChunks);
-                    }
-                    
-                    renderChunks(currentChunks);
-                    document.getElementById('chunk-preview-section').style.display = 'block';
-                    
-                    // Update pagination controls
-                    updatePaginationControls(data.total, newChunks.length);
-                }
-            } catch (error) {
-                console.error('Error loading chunks:', error);
+            if (selectedFilename) {
+                filteredChunks = allChunks.filter(chunk => chunk.filename === selectedFilename);
             }
+            
+            renderChunks(filteredChunks);
         }
         
-        // Update pagination controls
-        function updatePaginationControls(total, loadedCount) {
-            const paginationDiv = document.getElementById('pagination');
-            if (!paginationDiv) return;
-            
-            const hasMore = loadedCount === chunksPerPage && currentChunks.length < (total || 999999);
-            
-            if (hasMore) {
-                paginationDiv.innerHTML = `
-                    <button onclick="loadMoreChunks()" class="btn-secondary" style="padding: 10px 20px;">
-                        Load More (${currentChunks.length}/${total || '?'} chunks)
-                    </button>
-                `;
-            } else if (currentChunks.length > 0) {
-                paginationDiv.innerHTML = `
-                    <div style="text-align: center; color: #666; padding: 10px;">
-                        Đã hiển thị tất cả ${currentChunks.length} chunks
-                    </div>
-                `;
-            } else {
-                paginationDiv.innerHTML = '';
-            }
-        }
-        
-        // Load more chunks
-        function loadMoreChunks() {
-            currentPage++;
-            loadChunks(false);
-        }
         
         // Render chunks
         function renderChunks(chunks) {
@@ -1231,7 +1167,7 @@
                 return `
                     <div class="chunk-card">
                         <div class="chunk-header">
-                            <span>Position: ${chunk.position} | Length: ${chunk.len_chars} chars</span>
+                            <span>${escapeHtml(chunk.filename || '')}${chunk.filename ? ' - ' : ''}Position: ${chunk.position} | Length: ${chunk.len_chars} chars</span>
                         </div>
                         <div class="chunk-text" id="chunk-text-${idx}">
                             ${escapeHtml(preview)}
@@ -1389,9 +1325,10 @@
         }
         
         // View document content
-        async function viewDocument(docId, filename) {
+        async function viewDocument(filename) {
             try {
-                const response = await fetch(`/api/documents/${docId}/content`);
+                const encodedFilename = encodeURIComponent(filename);
+                const response = await fetch(`/api/documents/${encodedFilename}/content`);
                 const data = await response.json();
                 
                 if (data.success) {
