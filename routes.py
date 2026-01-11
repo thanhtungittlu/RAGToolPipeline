@@ -1,5 +1,5 @@
 """
-Flask Routes - API endpoints cho RAG Tool
+Flask Routes - API endpoints for RAG Tool
 """
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from werkzeug.exceptions import BadRequest
@@ -14,16 +14,16 @@ from services.chunking_service import ChunkingService
 logger = logging.getLogger(__name__)
 
 def register_routes(app: Flask):
-    """Đăng ký tất cả routes"""
+    """Register all routes"""
     
     @app.route('/')
     def index():
-        """Trang chủ - single page application"""
+        """Home page - single page application"""
         return render_template('index.html')
     
     @app.route('/api/documents', methods=['GET'])
     def list_documents():
-        """API: Lấy danh sách documents"""
+        """API: Get list of documents"""
         try:
             search = request.args.get('search', '').strip()
             documents = DocumentService.get_all_documents(search=search if search else None)
@@ -37,7 +37,7 @@ def register_routes(app: Flask):
     
     @app.route('/api/documents/discover', methods=['POST'])
     def discover_documents():
-        """API: Quét và discover documents từ data directory"""
+        """API: Scan and discover documents from data directory"""
         try:
             documents = DocumentService.discover_documents()
             return jsonify({
@@ -66,10 +66,10 @@ def register_routes(app: Flask):
                     'error': f'File type not allowed. Allowed: {", ".join(ALLOWED_EXTENSIONS)}'
                 }), 400
             
-            # Lưu file
+            # Save file
             filepath = DocumentService.save_uploaded_file(file)
             
-            # Phân tích và đăng ký
+            # Analyze and register
             stats = DocumentService.analyze_file(filepath)
             doc_id = DocumentService.register_document(filepath, stats)
             
@@ -86,7 +86,7 @@ def register_routes(app: Flask):
     
     @app.route('/api/documents/paste', methods=['POST'])
     def paste_text():
-        """API: Paste text và lưu thành file"""
+        """API: Paste text and save as file"""
         try:
             data = request.get_json()
             if not data or 'text' not in data:
@@ -100,10 +100,10 @@ def register_routes(app: Flask):
             if extension not in ALLOWED_EXTENSIONS:
                 extension = '.md'
             
-            # Lưu text
+            # Save text
             filepath = DocumentService.save_pasted_text(text, extension)
             
-            # Phân tích và đăng ký
+            # Analyze and register
             stats = DocumentService.analyze_file(filepath)
             doc_id = DocumentService.register_document(filepath, stats)
             
@@ -120,7 +120,7 @@ def register_routes(app: Flask):
     
     @app.route('/api/documents/<int:doc_id>/content', methods=['GET'])
     def get_document_content(doc_id):
-        """API: Lấy nội dung của document"""
+        """API: Get document content"""
         try:
             content = DocumentService.get_document_content(doc_id)
             if content is None:
@@ -136,11 +136,11 @@ def register_routes(app: Flask):
     
     @app.route('/api/chunking/strategies', methods=['GET'])
     def get_chunking_strategies():
-        """API: Lấy danh sách chunking strategies và params"""
+        """API: Get list of chunking strategies and parameters"""
         strategies = {
             'fixed_size': {
                 'name': 'Fixed Size Chunking',
-                'description': 'Chia text thành các chunk có kích thước cố định',
+                'description': 'Split text into chunks of fixed size',
                 'params': {
                     'chunk_size': {'type': 'number', 'default': 500, 'label': 'Chunk Size'},
                     'overlap': {'type': 'number', 'default': 50, 'label': 'Overlap'}
@@ -148,28 +148,28 @@ def register_routes(app: Flask):
             },
             'markdown_header': {
                 'name': 'Markdown Header Chunking',
-                'description': 'Chia theo markdown headers (# ## ###)',
+                'description': 'Split by markdown headers (# ## ###)',
                 'params': {
                     'max_depth': {'type': 'number', 'default': 3, 'label': 'Max Header Depth'}
                 }
             },
             'recursive': {
                 'name': 'Recursive Chunking',
-                'description': 'Chia đệ quy theo separators (paragraphs, sentences, words)',
+                'description': 'Recursively split by separators (paragraphs, sentences, words)',
                 'params': {
                     'max_chars': {'type': 'number', 'default': 500, 'label': 'Max Characters'}
                 }
             },
             'paragraph': {
                 'name': 'Paragraph-based Chunking',
-                'description': 'Chia theo paragraphs (double newlines)',
+                'description': 'Split by paragraphs (double newlines)',
                 'params': {
                     'max_chars': {'type': 'number', 'default': 500, 'label': 'Max Characters'}
                 }
             },
             'sliding_window': {
                 'name': 'Sliding Window Chunking',
-                'description': 'Chia với sliding window (overlap giữa các chunks)',
+                'description': 'Split with sliding window (overlap between chunks)',
                 'params': {
                     'window_size': {'type': 'number', 'default': 500, 'label': 'Window Size'},
                     'step_size': {'type': 'number', 'default': 250, 'label': 'Step Size'}
@@ -177,16 +177,16 @@ def register_routes(app: Flask):
             },
             'semantic': {
                 'name': 'Semantic Chunking',
-                'description': 'Chia dựa trên semantic similarity sử dụng embeddings từ Ollama server',
+                'description': 'Split based on semantic similarity using embeddings from Ollama server',
                 'params': {
                     'chunk_size': {'type': 'number', 'default': 500, 'label': 'Chunk Size'},
                     'model': {'type': 'select', 'default': 'ollama', 'label': 'Embedding Model', 
                              'options': [
-                                 {'value': 'ollama', 'label': 'Ollama (mặc định - localhost:11434)'},
+                                 {'value': 'ollama', 'label': 'Ollama (default - localhost:11434)'},
                                  {'value': 'sentence-transformers', 'label': 'Sentence Transformers (fallback)'}
                              ]},
                     'ollama_url': {'type': 'text', 'default': 'http://localhost:11434', 'label': 'Ollama Server URL'},
-                    'ollama_model': {'type': 'text', 'default': 'nomic-embed-text', 'label': 'Ollama Model Name (mặc định: nomic-embed-text)'}
+                    'ollama_model': {'type': 'text', 'default': 'nomic-embed-text', 'label': 'Ollama Model Name (default: nomic-embed-text)'}
                 }
             }
         }
@@ -198,7 +198,7 @@ def register_routes(app: Flask):
     
     @app.route('/api/chunking/run', methods=['POST'])
     def run_chunking():
-        """API: Chạy chunking cho các documents đã chọn"""
+        """API: Run chunking for selected documents"""
         try:
             data = request.get_json()
             if not data:
@@ -214,22 +214,22 @@ def register_routes(app: Flask):
             if not strategy:
                 return jsonify({'success': False, 'error': 'No strategy selected'}), 400
             
-            # Validate doc_ids tồn tại
+            # Validate doc_ids exist
             documents = DocumentService.get_documents_by_ids(doc_ids)
             if len(documents) != len(doc_ids):
                 return jsonify({'success': False, 'error': 'Some documents not found'}), 400
             
-            # Chạy chunking
+            # Run chunking
             chunks = ChunkingService.chunk_multiple_documents(doc_ids, strategy, params)
             
-            # Lấy statistics
+            # Get statistics
             stats = ChunkingService.get_chunk_statistics(doc_ids, strategy)
             
             return jsonify({
                 'success': True,
                 'message': f'Created {len(chunks)} chunks',
                 'statistics': stats,
-                'chunks': [chunk.to_dict() for chunk in chunks[:10]]  # Preview 10 chunks đầu
+                'chunks': [chunk.to_dict() for chunk in chunks[:10]]  # Preview first 10 chunks
             })
         except Exception as e:
             logger.error(f"Error running chunking: {e}")
@@ -237,7 +237,7 @@ def register_routes(app: Flask):
     
     @app.route('/api/chunks', methods=['GET'])
     def get_chunks():
-        """API: Lấy chunks với pagination"""
+        """API: Get chunks with pagination"""
         try:
             doc_id = request.args.get('doc_id', type=int)
             strategy = request.args.get('strategy', '')

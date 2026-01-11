@@ -2,12 +2,12 @@
 RAG Tool - Flask Application
 MVP: Document Management + Chunking Pipeline
 
-Hướng dẫn chạy:
-1. Cài đặt dependencies: pip install -r requirements.txt
-2. Chạy app: python app.py
-3. Mở browser: http://localhost:5000
+Setup Instructions:
+1. Install dependencies: pip install -r requirements.txt
+2. Run app: python app.py
+3. Open browser: http://localhost:5000
 
-Kiến trúc:
+Architecture:
 - Storage: models.py, database.py
 - Services: document_service.py, chunking_service.py
 - Routes: routes.py
@@ -34,7 +34,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def create_app():
-    """Factory function để tạo Flask app"""
+    """Factory function to create Flask app"""
     app = Flask(__name__)
     app.config['SECRET_KEY'] = 'dev-secret-key-change-in-production'
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size

@@ -1,5 +1,5 @@
 """
-Chunking Service - Xử lý chunking với nhiều strategies
+Chunking Service - Handle chunking with multiple strategies
 """
 import re
 import json
@@ -19,7 +19,7 @@ from config import (
     OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_EMBEDDING_MODEL, OLLAMA_LLM_MODEL
 )
 
-# Try import các thư viện cho semantic chunking
+# Try import libraries for semantic chunking
 try:
     import requests
     HAS_REQUESTS = True
@@ -41,11 +41,11 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 class ChunkingService:
-    """Service để chunk documents với nhiều strategies"""
+    """Service to chunk documents with multiple strategies"""
     
     @staticmethod
     def fixed_size_chunk(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
-        """Chunk theo kích thước cố định với overlap"""
+        """Chunk by fixed size with overlap"""
         if not text:
             return []
         
@@ -67,7 +67,7 @@ class ChunkingService:
     
     @staticmethod
     def markdown_header_chunk(text: str, max_depth: int = 3) -> List[str]:
-        """Chunk theo markdown headers"""
+        """Chunk by markdown headers"""
         if not text:
             return []
         
@@ -83,7 +83,7 @@ class ChunkingService:
             if header_match:
                 level = len(header_match.group(1))
                 
-                # Nếu gặp header mới và đã có content, save chunk cũ
+                # If new header found and has content, save old chunk
                 if current_chunk and level <= max_depth:
                     chunks.append('\n'.join(current_chunk))
                     current_chunk = []
@@ -92,7 +92,7 @@ class ChunkingService:
             
             current_chunk.append(line)
         
-        # Thêm chunk cuối cùng
+        # Add last chunk
         if current_chunk:
             chunks.append('\n'.join(current_chunk))
         
@@ -100,7 +100,7 @@ class ChunkingService:
     
     @staticmethod
     def recursive_chunk(text: str, max_chars: int = 500, separators: List[str] = None) -> List[str]:
-        """Recursive chunking - chia theo separators"""
+        """Recursive chunking - split by separators"""
         if not text:
             return []
         
@@ -150,7 +150,7 @@ class ChunkingService:
     
     @staticmethod
     def paragraph_chunk(text: str, max_chars: int = 500) -> List[str]:
-        """Chunk theo paragraphs"""
+        """Chunk by paragraphs"""
         if not text:
             return []
         
@@ -171,7 +171,7 @@ class ChunkingService:
                 if current_chunk:
                     chunks.append(current_chunk)
                 
-                # Nếu paragraph quá dài, chia nhỏ
+                # If paragraph too long, split it
                 if len(para) > max_chars:
                     chunks.extend(ChunkingService.fixed_size_chunk(para, max_chars, 0))
                     current_chunk = ""
@@ -203,11 +203,11 @@ class ChunkingService:
     
     @staticmethod
     def _get_embeddings_ollama(texts: List[str], model: Optional[str] = None, base_url: Optional[str] = None) -> Optional[List[List[float]]]:
-        """Lấy embeddings từ Ollama API (local server tại localhost:11434)"""
+        """Get embeddings from Ollama API (local server at localhost:11434)"""
         if not HAS_REQUESTS:
             return None
         
-        # Sử dụng config mặc định nếu không được truyền vào
+        # Use default config if not provided
         if model is None:
             model = OLLAMA_EMBEDDING_MODEL
         if base_url is None:
@@ -246,28 +246,28 @@ class ChunkingService:
             
             return embeddings if len(embeddings) == len(texts) else None
         except Exception as e:
-            logger.warning(f"Ollama API không khả dụng: {e}")
+            logger.warning(f"Ollama API not available: {e}")
             return None
     
     @staticmethod
     def _get_embeddings_sentence_transformers(texts: List[str]) -> Optional[List[List[float]]]:
-        """Lấy embeddings từ sentence-transformers"""
+        """Get embeddings from sentence-transformers"""
         if not HAS_SENTENCE_TRANSFORMERS:
             return None
         
         try:
-            # Sử dụng model nhẹ, hỗ trợ tiếng Việt
-            # Model sẽ được cache sau lần đầu tiên
+            # Use lightweight model, supports Vietnamese
+            # Model will be cached after first use
             model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
             embeddings = model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
             return embeddings.tolist()
         except Exception as e:
-            logger.warning(f"Sentence transformers không khả dụng: {e}")
+            logger.warning(f"Sentence transformers not available: {e}")
             return None
     
     @staticmethod
     def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
-        """Tính cosine similarity giữa 2 vectors"""
+        """Calculate cosine similarity between 2 vectors"""
         if not HAS_NUMPY:
             # Fallback calculation without numpy
             dot_product = sum(a * b for a, b in zip(vec1, vec2))
@@ -304,7 +304,7 @@ class ChunkingService:
         if not text:
             return []
         
-        # Tách text thành sentences
+        # Split text into sentences
         sentences = re.split(r'([.!?]\s+)', text)
         proper_sentences = []
         for i in range(0, len(sentences) - 1, 2):
@@ -313,18 +313,18 @@ class ChunkingService:
             else:
                 proper_sentences.append(sentences[i])
         
-        # Lọc sentences rỗng
+        # Filter empty sentences
         proper_sentences = [s.strip() for s in proper_sentences if s.strip()]
         
         if len(proper_sentences) <= 1:
             return [text] if text else []
         
-        # Lấy embeddings - ưu tiên Ollama (mặc định)
+        # Get embeddings - prioritize Ollama (default)
         embeddings = None
         
-        # Nếu chọn ollama (mặc định), thử kết nối Ollama server
+        # If ollama selected (default), try connecting to Ollama server
         if model.lower() == "ollama" or model.lower() != "sentence-transformers":
-            logger.info(f"Sử dụng Ollama tại {ollama_url or OLLAMA_BASE_URL}")
+            logger.info(f"Using Ollama at {ollama_url or OLLAMA_BASE_URL}")
             use_model = ollama_model or OLLAMA_EMBEDDING_MODEL
             embeddings = ChunkingService._get_embeddings_ollama(
                 proper_sentences, 
@@ -332,32 +332,32 @@ class ChunkingService:
                 base_url=ollama_url
             )
             
-            # Nếu ollama thất bại, fallback sang sentence-transformers
+            # If ollama fails, fallback to sentence-transformers
             if embeddings is None and HAS_SENTENCE_TRANSFORMERS:
-                logger.info("Ollama không khả dụng, fallback sang sentence-transformers")
+                logger.info("Ollama not available, fallback to sentence-transformers")
                 embeddings = ChunkingService._get_embeddings_sentence_transformers(proper_sentences)
         
-        # Nếu chọn sentence-transformers, dùng sentence-transformers
+        # If sentence-transformers selected, use sentence-transformers
         elif model.lower() == "sentence-transformers":
             if HAS_SENTENCE_TRANSFORMERS:
-                logger.info("Sử dụng sentence-transformers cho semantic chunking")
+                logger.info("Using sentence-transformers for semantic chunking")
                 embeddings = ChunkingService._get_embeddings_sentence_transformers(proper_sentences)
             else:
-                logger.warning("Sentence-transformers không khả dụng, fallback về semantic chunking đơn giản")
+                logger.warning("Sentence-transformers not available, fallback to simple semantic chunking")
                 return ChunkingService._semantic_chunk_simple(text, chunk_size)
         
-        # Nếu vẫn không có embeddings, fallback về version đơn giản
+        # If still no embeddings, fallback to simple version
         if embeddings is None or len(embeddings) != len(proper_sentences):
-            logger.info("Không có embeddings, sử dụng semantic chunking đơn giản")
+            logger.info("No embeddings available, using simple semantic chunking")
             return ChunkingService._semantic_chunk_simple(text, chunk_size)
         
-        # Tính similarity giữa các câu liên tiếp
+        # Calculate similarity between consecutive sentences
         similarities = []
         for i in range(len(embeddings) - 1):
             sim = ChunkingService._cosine_similarity(embeddings[i], embeddings[i + 1])
             similarities.append(sim)
         
-        # Chia chunks dựa trên similarity và kích thước
+        # Split chunks based on similarity and size
         chunks = []
         current_chunk = []
         current_length = 0
@@ -365,36 +365,36 @@ class ChunkingService:
         for i, sentence in enumerate(proper_sentences):
             sentence_len = len(sentence)
             
-            # Nếu câu hiện tại quá dài, tách chunk
+            # If current sentence too long, split chunk
             if current_length + sentence_len > chunk_size * 1.5 and current_chunk:
                 chunks.append(' '.join(current_chunk))
                 current_chunk = [sentence]
                 current_length = sentence_len
                 continue
             
-            # Kiểm tra similarity với câu trước
+            # Check similarity with previous sentence
             if i > 0:
                 similarity = similarities[i - 1]
                 
-                # Nếu similarity thấp (< 0.5), có thể là điểm chia tốt
-                # Nhưng chỉ chia nếu đã đạt kích thước tối thiểu
+                # If similarity low (< 0.5), could be a good split point
+                # But only split if reached minimum size
                 if similarity < 0.5 and current_length >= chunk_size * 0.5 and current_chunk:
                     chunks.append(' '.join(current_chunk))
                     current_chunk = [sentence]
                     current_length = sentence_len
                     continue
             
-            # Thêm câu vào chunk hiện tại
+            # Add sentence to current chunk
             current_chunk.append(sentence)
             current_length += sentence_len + 1  # +1 for space
             
-            # Nếu đạt kích thước, tách chunk
+            # If reached size, split chunk
             if current_length >= chunk_size:
                 chunks.append(' '.join(current_chunk))
                 current_chunk = []
                 current_length = 0
         
-        # Thêm chunk cuối cùng
+        # Add last chunk
         if current_chunk:
             chunks.append(' '.join(current_chunk))
         
@@ -403,12 +403,12 @@ class ChunkingService:
     @staticmethod
     def _semantic_chunk_simple(text: str, chunk_size: int = 500) -> List[str]:
         """
-        Fallback semantic chunking đơn giản (không dùng embeddings)
+        Fallback simple semantic chunking (without embeddings)
         """
         if not text:
             return []
         
-        # Tách theo câu
+        # Split by sentences
         sentences = re.split(r'([.!?]\s+)', text)
         proper_sentences = []
         for i in range(0, len(sentences) - 1, 2):
@@ -437,14 +437,14 @@ class ChunkingService:
     
     @staticmethod
     def chunk_document(doc_id: int, strategy: str, params: Dict[str, Any]) -> List[Chunk]:
-        """Chunk một document với strategy và params cho trước"""
-        # Lấy nội dung document
+        """Chunk a document with given strategy and params"""
+        # Get document content
         content = DocumentService.get_document_content(doc_id)
         if not content:
             logger.warning(f"Document {doc_id} has no content")
             return []
         
-        # Chọn strategy và chunk
+        # Select strategy and chunk
         chunks_text = []
         
         if strategy == 'fixed_size':
@@ -472,7 +472,7 @@ class ChunkingService:
         
         elif strategy == 'semantic':
             chunk_size = params.get('chunk_size', 500)
-            model = params.get('model', 'ollama')  # Mặc định dùng Ollama
+            model = params.get('model', 'ollama')  # Default use Ollama
             ollama_url = params.get('ollama_url', None)
             ollama_model = params.get('ollama_model', None)
             chunks_text = ChunkingService.semantic_chunk(
@@ -485,12 +485,12 @@ class ChunkingService:
             logger.error(f"Unknown strategy: {strategy}")
             return []
         
-        # Lưu chunks vào database
+        # Save chunks to database
         saved_chunks = []
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Xóa chunks cũ của document này với strategy này (nếu có)
+        # Delete old chunks for this document with this strategy (if any)
         cursor.execute('DELETE FROM chunks WHERE doc_id = ? AND strategy = ?', (doc_id, strategy))
         
         params_json = json.dumps(params)
@@ -521,7 +521,7 @@ class ChunkingService:
     
     @staticmethod
     def chunk_multiple_documents(doc_ids: List[int], strategy: str, params: Dict[str, Any]) -> List[Chunk]:
-        """Chunk nhiều documents"""
+        """Chunk multiple documents"""
         all_chunks = []
         for doc_id in doc_ids:
             chunks = ChunkingService.chunk_document(doc_id, strategy, params)
@@ -530,7 +530,7 @@ class ChunkingService:
     
     @staticmethod
     def get_chunks_by_doc(doc_id: int, strategy: Optional[str] = None) -> List[Chunk]:
-        """Lấy chunks của một document"""
+        """Get chunks of a document"""
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -554,7 +554,7 @@ class ChunkingService:
     
     @staticmethod
     def get_chunks_by_strategy(strategy: str, limit: int = 10, offset: int = 0) -> List[Chunk]:
-        """Lấy chunks theo strategy với pagination"""
+        """Get chunks by strategy with pagination"""
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''
@@ -571,7 +571,7 @@ class ChunkingService:
     
     @staticmethod
     def get_chunk_statistics(doc_ids: List[int], strategy: str) -> Dict[str, Any]:
-        """Lấy thống kê về chunks"""
+        """Get chunk statistics"""
         conn = get_db_connection()
         cursor = conn.cursor()
         

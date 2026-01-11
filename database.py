@@ -1,6 +1,6 @@
 """
-Database layer - SQLite với SQLAlchemy-style queries
-Sử dụng sqlite3 stdlib để không cần thêm dependencies
+Database layer - SQLite with SQLAlchemy-style queries
+Uses sqlite3 stdlib to avoid additional dependencies
 """
 import sqlite3
 import json
@@ -12,17 +12,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 def get_db_connection():
-    """Tạo connection đến SQLite database"""
+    """Create connection to SQLite database"""
     conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
-    """Khởi tạo database và tạo các bảng cần thiết"""
+    """Initialize database and create necessary tables"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Bảng documents
+    # Documents table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS documents (
             doc_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,7 +36,7 @@ def init_db():
         )
     ''')
     
-    # Bảng chunks
+    # Chunks table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS chunks (
             chunk_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +51,7 @@ def init_db():
         )
     ''')
     
-    # Indexes để tăng tốc query
+    # Indexes to improve query performance
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON chunks(doc_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_chunks_strategy ON chunks(strategy)')
     
@@ -60,7 +60,7 @@ def init_db():
     logger.info("Database initialized successfully")
 
 def execute_query(query, params=(), fetch_one=False, fetch_all=False):
-    """Helper function để execute queries"""
+    """Helper function to execute queries"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:

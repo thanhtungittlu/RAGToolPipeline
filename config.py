@@ -1,6 +1,6 @@
 """
-Cấu hình hệ thống RAG Tool
-Hỗ trợ đọc từ file .env hoặc sử dụng giá trị mặc định
+RAG Tool System Configuration
+Supports reading from .env file or using default values
 """
 import os
 from pathlib import Path
@@ -12,7 +12,7 @@ load_dotenv()
 # Base directory
 BASE_DIR = Path(__file__).parent.absolute()
 
-# Data directory - lưu trữ tài liệu
+# Data directory - stores documents
 DATA_DIR_STR = os.getenv('DATA_DIR', '').strip()
 if DATA_DIR_STR:
     DATA_DIR = Path(DATA_DIR_STR).resolve()
@@ -35,7 +35,7 @@ DEFAULT_CHUNK_SIZE = int(os.getenv('DEFAULT_CHUNK_SIZE', '500'))
 DEFAULT_CHUNK_OVERLAP = int(os.getenv('DEFAULT_CHUNK_OVERLAP', '50'))
 
 # Ollama configuration
-# Đọc từ .env hoặc sử dụng giá trị mặc định
+# Read from .env or use default values
 OLLAMA_BASE_URL = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
 OLLAMA_EMBEDDING_MODEL = os.getenv('OLLAMA_EMBEDDING_MODEL', 'nomic-embed-text')
 OLLAMA_LLM_MODEL = os.getenv('OLLAMA_LLM_MODEL', 'llama3.2:3b')
