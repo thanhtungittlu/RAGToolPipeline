@@ -151,9 +151,10 @@ def register_routes(app: Flask):
             },
             'recursive': {
                 'name': 'Recursive Chunking',
-                'description': 'Recursively split by separators (paragraphs, sentences, words)',
+                'description': 'Recursively split by separators (paragraphs, sentences, words, markdown headers)',
                 'params': {
-                    'max_chars': {'type': 'number', 'default': 500, 'label': 'Max Characters'}
+                    'max_chars': {'type': 'number', 'default': 500, 'label': 'Max Characters'},
+                    'separators': {'type': 'text', 'default': '\\n\\n,\\n,. , ,#', 'label': 'Separators (comma-separated)', 'placeholder': 'e.g., \\n\\n,\\n,. , ,#'}
                 }
             },
             'paragraph': {

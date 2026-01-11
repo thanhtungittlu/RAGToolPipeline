@@ -75,6 +75,10 @@ class DocumentService:
             filepath = DATA_DIR / filename
         
         file.save(str(filepath))
+        # Ensure file is flushed to disk immediately
+        if filepath.exists():
+            with open(filepath, 'rb') as f:
+                os.fsync(f.fileno())
         logger.info(f"File saved: {filepath}")
         return filepath
     
@@ -87,6 +91,8 @@ class DocumentService:
         
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
         
         logger.info(f"Pasted text saved: {filepath}")
         return filepath

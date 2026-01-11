@@ -676,8 +676,11 @@
     <script>
         let selectedFilenames = [];
         let currentStrategy = '';
-        let currentChunks = [];
         let allChunks = []; // Store all chunks from chunking result
+        let displayedChunks = []; // Chunks currently displayed
+        let chunksPerPage = 5;
+        let currentPage = 0;
+        let filteredFilename = ''; // Current filter selection
         let chunksData = {}; // Lưu full text của chunks để expand
         
         // Initialize
@@ -958,48 +961,50 @@
         // Populate filter dropdown
         async function populateFilterDropdown() {
             try {
-                const response = await fetch('/api/documents');
-                const data = await response.json();
+                const filterSelect = document.getElementById('filter-doc');
+                if (!filterSelect) {
+                    console.error('Filter dropdown not found');
+                    return;
+                }
                 
-                if (data.success) {
-                    const filterSelect = document.getElementById('filter-doc');
-                    if (!filterSelect) {
-                        console.error('Filter dropdown not found');
-                        return;
-                    }
-                    
-                    const currentValue = filterSelect.value; // Lưu giá trị hiện tại
-                    filterSelect.innerHTML = '<option value="">All Documents</option>';
-                    
-                    // Đảm bảo selectedDocIds là array và không rỗng
-                    if (selectedDocIds && selectedDocIds.length > 0) {
-                        const selected = data.documents.filter(d => selectedDocIds.includes(d.doc_id));
-                        
-                        if (selected.length > 0) {
-                            selected.forEach(doc => {
-                                const option = document.createElement('option');
-                                option.value = doc.doc_id.toString();
-                                option.textContent = doc.filename;
-                                filterSelect.appendChild(option);
-                            });
-                        } else {
-                            console.warn('No matching documents found for selectedDocIds:', selectedDocIds);
+                const currentValue = filterSelect.value; // Lưu giá trị hiện tại
+                filterSelect.innerHTML = '<option value="">All Documents</option>';
+                
+                // Get unique filenames from allChunks (chunks that were actually created)
+                const uniqueFilenames = [];
+                if (allChunks && allChunks.length > 0) {
+                    const filenamesSet = new Set();
+                    allChunks.forEach(chunk => {
+                        if (chunk.filename && !filenamesSet.has(chunk.filename)) {
+                            filenamesSet.add(chunk.filename);
+                            uniqueFilenames.push(chunk.filename);
                         }
-                    } else {
-                        console.warn('selectedDocIds is empty or undefined');
-                    }
-                    
-                    // Enable dropdown và đảm bảo có thể click được
-                    filterSelect.disabled = false;
-                    filterSelect.style.pointerEvents = 'auto';
-                    filterSelect.style.opacity = '1';
-                    
-                    // Khôi phục giá trị đã chọn nếu vẫn hợp lệ
-                    if (currentValue) {
-                        const optionExists = Array.from(filterSelect.options).some(opt => opt.value === currentValue);
-                        if (optionExists) {
-                            filterSelect.value = currentValue;
-                        }
+                    });
+                }
+                
+                // If no chunks yet, use selectedFilenames as fallback
+                if (uniqueFilenames.length === 0 && selectedFilenames && selectedFilenames.length > 0) {
+                    uniqueFilenames.push(...selectedFilenames);
+                }
+                
+                // Populate dropdown với unique filenames
+                uniqueFilenames.forEach(filename => {
+                    const option = document.createElement('option');
+                    option.value = filename;
+                    option.textContent = filename;
+                    filterSelect.appendChild(option);
+                });
+                
+                // Enable dropdown và đảm bảo có thể click được
+                filterSelect.disabled = false;
+                filterSelect.style.pointerEvents = 'auto';
+                filterSelect.style.opacity = '1';
+                
+                // Khôi phục giá trị đã chọn nếu vẫn hợp lệ
+                if (currentValue) {
+                    const optionExists = Array.from(filterSelect.options).some(opt => opt.value === currentValue);
+                    if (optionExists) {
+                        filterSelect.value = currentValue;
                     }
                 }
             } catch (error) {
@@ -1075,14 +1080,21 @@
                     // Store all chunks
                     allChunks = data.chunks || [];
                     
+                    // Reset pagination and filter
+                    currentPage = 0;
+                    filteredFilename = '';
+                    displayedChunks = [];
+                    
                     // Show statistics
                     renderStatistics(data.statistics);
                     
                     // Populate filter dropdown với selected documents
                     await populateFilterDropdown();
                     
-                    // Display all chunks
-                    renderChunks(allChunks);
+                    // Display first 5 chunks
+                    displayedChunks = allChunks.slice(0, chunksPerPage);
+                    renderChunks(displayedChunks);
+                    updateLoadMoreButton(allChunks);
                     document.getElementById('chunk-preview-section').style.display = 'block';
                 } else {
                     showAlert('step2-alerts', data.error || 'Chunking failed', 'error');
@@ -1127,14 +1139,68 @@
                 return;
             }
             
-            const selectedFilename = filterSelect.value;
-            let filteredChunks = allChunks;
+            filteredFilename = filterSelect.value || '';
             
-            if (selectedFilename) {
-                filteredChunks = allChunks.filter(chunk => chunk.filename === selectedFilename);
+            // Reset to first page when filtering
+            currentPage = 0;
+            
+            // Get filtered chunks
+            let filteredChunks = allChunks;
+            if (filteredFilename) {
+                filteredChunks = allChunks.filter(chunk => chunk.filename === filteredFilename);
             }
             
-            renderChunks(filteredChunks);
+            // Display first page
+            displayedChunks = filteredChunks.slice(0, chunksPerPage);
+            renderChunks(displayedChunks);
+            updateLoadMoreButton(filteredChunks);
+        }
+        
+        // Load more chunks
+        function loadMoreChunks() {
+            currentPage++;
+            
+            // Get filtered chunks
+            let filteredChunks = allChunks;
+            if (filteredFilename) {
+                filteredChunks = allChunks.filter(chunk => chunk.filename === filteredFilename);
+            }
+            
+            // Calculate how many to show
+            const startIndex = currentPage * chunksPerPage;
+            const endIndex = startIndex + chunksPerPage;
+            const newChunks = filteredChunks.slice(startIndex, endIndex);
+            
+            // Add to displayed chunks
+            displayedChunks = displayedChunks.concat(newChunks);
+            
+            renderChunks(displayedChunks);
+            updateLoadMoreButton(filteredChunks);
+        }
+        
+        // Update load more button
+        function updateLoadMoreButton(filteredChunks) {
+            const paginationDiv = document.getElementById('pagination');
+            if (!paginationDiv) return;
+            
+            const totalChunks = filteredChunks.length;
+            const displayedCount = displayedChunks.length;
+            
+            if (displayedCount < totalChunks) {
+                paginationDiv.innerHTML = `
+                    <button onclick="loadMoreChunks()" class="btn-secondary" style="padding: 10px 20px; width: 100%;">
+                        Load More (${displayedCount}/${totalChunks} chunks shown)
+                    </button>
+                `;
+            } else if (displayedCount > 0) {
+                paginationDiv.innerHTML = `
+                    <div style="text-align: center; color: #666; padding: 10px;">
+                        All ${totalChunks} chunks displayed
+                    </div>
+                `;
+            } else {
+                paginationDiv.innerHTML = '';
+            }
         }
         
         

@@ -458,7 +458,24 @@ class ChunkingService:
         
         elif strategy == 'recursive':
             max_chars = params.get('max_chars', 500)
-            separators = params.get('separators', ['\n\n', '\n', '. ', ' '])
+            separators_param = params.get('separators', '\\n\\n,\\n,. , ,#')
+            
+            # Parse separators - can be string (comma-separated) or list
+            if isinstance(separators_param, str):
+                # Split by comma and unescape special characters
+                separators_list = [s.strip() for s in separators_param.split(',')]
+                # Unescape common escape sequences
+                separators = []
+                for sep in separators_list:
+                    # Replace escaped sequences
+                    sep = sep.replace('\\n', '\n').replace('\\t', '\t').replace('\\r', '\r')
+                    separators.append(sep)
+            elif isinstance(separators_param, list):
+                separators = separators_param
+            else:
+                # Default separators
+                separators = ['\n\n', '\n', '. ', ' ', '#']
+            
             chunks_text = ChunkingService.recursive_chunk(content, max_chars, separators)
         
         elif strategy == 'paragraph':
