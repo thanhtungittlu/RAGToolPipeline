@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Tool - Document & Chunking Pipeline</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .pipeline {
+            padding: 30px;
+        }
+        
+        .step {
+            margin-bottom: 40px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 25px;
+            background: #fafafa;
+        }
+        
+        .step.active {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+        
+        .step.completed {
+            border-color: #4caf50;
+            background: #f1f8f4;
+        }
+        
+        .step-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .step-number {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #667eea;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2em;
+            margin-right: 15px;
+        }
+        
+        .step.completed .step-number {
+            background: #4caf50;
+        }
+        
+        .step-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .step-content {
+            margin-top: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #555;
+        }
+        
+        input[type="file"],
+        input[type="text"],
+        input[type="number"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        textarea {
+            min-height: 150px;
+            font-family: monospace;
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #5568d3;
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .btn-success {
+            background: #4caf50;
+        }
+        
+        .btn-success:hover {
+            background: #45a049;
+        }
+        
+        .documents-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .documents-table th,
+        .documents-table td {
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .documents-table th {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            font-weight: 600;
+            color: #333;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .documents-table tr {
+            transition: background 0.2s;
+        }
+        
+        .documents-table tr:hover {
+            background: #f0f4ff;
+        }
+        
+        .documents-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .doc-file-icon {
+            font-size: 1.2em;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        
+        .doc-filename {
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .doc-stats {
+            color: #666;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        .search-box {
+            margin-bottom: 15px;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .chunk-preview {
+            margin-top: 20px;
+        }
+        
+        .chunk-card {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .chunk-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .chunk-text {
+            color: #333;
+            line-height: 1.6;
+            max-height: 200px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .chunk-text.expanded {
+            max-height: none;
+        }
+        
+        .expand-btn {
+            background: none;
+            border: none;
+            color: #667eea;
+            cursor: pointer;
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+        
+        .statistics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            border: 1px solid #ddd;
+        }
+        
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        
+        .placeholder {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+            font-style: italic;
+        }
+        
+        .alert {
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background: white;
+            margin: 5% auto;
+            padding: 0;
+            border-radius: 8px;
+            max-width: 900px;
+            max-height: 85vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        
+        .modal-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.5em;
+        }
+        
+        .modal-body {
+            padding: 30px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        
+        .modal-body pre {
+            white-space: pre-wrap;
+            font-family: inherit;
+            margin: 0;
+            line-height: 1.6;
+        }
+        
+        .modal-body.markdown-content {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.7;
+        }
+        
+        .modal-body.markdown-content h1,
+        .modal-body.markdown-content h2,
+        .modal-body.markdown-content h3,
+        .modal-body.markdown-content h4 {
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            color: #333;
+        }
+        
+        .modal-body.markdown-content h1 {
+            font-size: 2em;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 0.3em;
+        }
+        
+        .modal-body.markdown-content h2 {
+            font-size: 1.5em;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 0.3em;
+        }
+        
+        .modal-body.markdown-content h3 {
+            font-size: 1.3em;
+        }
+        
+        .modal-body.markdown-content code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        .modal-body.markdown-content pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        
+        .modal-body.markdown-content pre code {
+            background: transparent;
+            padding: 0;
+        }
+        
+        .modal-body.markdown-content ul,
+        .modal-body.markdown-content ol {
+            margin-left: 1.5em;
+            margin-bottom: 1em;
+        }
+        
+        .modal-body.markdown-content li {
+            margin-bottom: 0.5em;
+        }
+        
+        .modal-body.markdown-content blockquote {
+            border-left: 4px solid #667eea;
+            padding-left: 1em;
+            margin-left: 0;
+            color: #666;
+            font-style: italic;
+        }
+        
+        .modal-body.markdown-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+        }
+        
+        .modal-body.markdown-content table th,
+        .modal-body.markdown-content table td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        
+        .modal-body.markdown-content table th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        
+        .close {
+            color: white;
+            font-size: 32px;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 1;
+            opacity: 0.9;
+        }
+        
+        .close:hover {
+            opacity: 1;
+        }
+        
+        .pagination {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 RAG Tool Pipeline</h1>
+            <p>Document Management & Chunking System</p>
+        </div>
+        
+        <div class="pipeline">
+            <!-- Step 1: Document Management -->
+            <div class="step active" id="step1">
+                <div class="step-header">
+                    <div class="step-number">1</div>
+                    <div class="step-title">Document Management</div>
+                </div>
+                
+                <div class="step-content">
+                    <div id="step1-alerts"></div>
+                    
+                    <!-- Upload Section -->
+                    <div class="form-group">
+                        <label>Upload Document</label>
+                        <input type="file" id="file-input" accept=".md,.txt">
+                        <button onclick="uploadFile()" style="margin-top: 10px;">Upload File</button>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Hoặc Paste Text</label>
+                        <textarea id="paste-text" placeholder="Dán nội dung text vào đây..."></textarea>
+                        <button onclick="pasteText()" style="margin-top: 10px;">Save Pasted Text</button>
+                    </div>
+                    
+                    <!-- Document List -->
+                    <div class="form-group">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <label style="margin: 0;">Documents List</label>
+                            <div>
+                                <input type="text" id="search-box" placeholder="Search by filename..." 
+                                       onkeyup="searchDocuments()" style="width: 250px; margin-right: 10px;">
+                                <button onclick="discoverDocuments()" class="btn-secondary">Refresh/Rescan</button>
+                            </div>
+                        </div>
+                        
+                        <table class="documents-table" id="documents-table">
+                            <thead>
+                                <tr>
+                                    <th><input type="checkbox" id="select-all" onchange="toggleSelectAll()"></th>
+                                    <th>Filename</th>
+                                    <th>Lines</th>
+                                    <th>Characters</th>
+                                    <th>Size</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="documents-tbody">
+                                <tr>
+                                    <td colspan="6" style="text-align: center; padding: 20px;">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        
+                        <div class="actions">
+                            <button onclick="goToChunking()" id="chunk-btn" disabled>Go to Chunking →</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Step 2: Chunking -->
+            <div class="step" id="step2">
+                <div class="step-header">
+                    <div class="step-number">2</div>
+                    <div class="step-title">Chunking</div>
+                </div>
+                
+                <div class="step-content">
+                    <div id="step2-alerts"></div>
+                    
+                    <div class="form-group">
+                        <label>Selected Documents</label>
+                        <div id="selected-docs" style="padding: 10px; background: #f5f5f5; border-radius: 6px; min-height: 40px;">
+                            No documents selected
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Chunking Strategy</label>
+                        <select id="strategy-select" onchange="updateStrategyParams()">
+                            <option value="">-- Select Strategy --</option>
+                        </select>
+                    </div>
+                    
+                    <div id="strategy-params" class="form-group">
+                        <!-- Dynamic params sẽ được render ở đây -->
+                    </div>
+                    
+                    <div class="actions">
+                        <button onclick="runChunking()" id="run-chunking-btn">Run Chunking</button>
+                    </div>
+                    
+                    <!-- Chunk Preview -->
+                    <div id="chunk-preview-section" style="display: none;">
+                        <h3 style="margin-top: 30px; margin-bottom: 15px;">Chunk Preview</h3>
+                        
+                        <div class="statistics" id="chunk-statistics"></div>
+                        
+                        <div class="form-group" style="margin-top: 20px;">
+                            <label>Filter by Document</label>
+                            <select id="filter-doc" onchange="loadChunks(true)" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; cursor: pointer;">
+                                <option value="">All Documents</option>
+                            </select>
+                        </div>
+                        
+                        <div id="chunks-container"></div>
+                        
+                        <div class="pagination" id="pagination"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Step 3: Embeddings (Placeholder) -->
+            <div class="step" id="step3">
+                <div class="step-header">
+                    <div class="step-number">3</div>
+                    <div class="step-title">Embeddings</div>
+                </div>
+                <div class="step-content">
+                    <div class="placeholder">Coming soon...</div>
+                </div>
+            </div>
+            
+            <!-- Step 4: UMAP (Placeholder) -->
+            <div class="step" id="step4">
+                <div class="step-header">
+                    <div class="step-number">4</div>
+                    <div class="step-title">UMAP Visualization</div>
+                </div>
+                <div class="step-content">
+                    <div class="placeholder">Coming soon...</div>
+                </div>
+            </div>
+            
+            <!-- Step 5: Retrieval Test (Placeholder) -->
+            <div class="step" id="step5">
+                <div class="step-header">
+                    <div class="step-number">5</div>
+                    <div class="step-title">Retrieval Test</div>
+                </div>
+                <div class="step-content">
+                    <div class="placeholder">Coming soon...</div>
+                </div>
+            </div>
+            
+            <!-- Step 6: RAGAS Evaluation (Placeholder) -->
+            <div class="step" id="step6">
+                <div class="step-header">
+                    <div class="step-number">6</div>
+                    <div class="step-title">RAGAS Evaluation</div>
+                </div>
+                <div class="step-content">
+                    <div class="placeholder">Coming soon...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal for viewing document content -->
+    <div id="view-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title"></h2>
+                <span class="close" onclick="closeModal()">&times;</span>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+    
+    <script>
+        let selectedDocIds = [];
+        let currentStrategy = '';
+        let currentChunks = [];
+        let currentPage = 0;
+        const chunksPerPage = 5;
+        let chunksData = {}; // Lưu full text của chunks để expand
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStrategies();
+            loadDocuments();
+        });
+        
+        // Load chunking strategies
+        async function loadStrategies() {
+            try {
+                const response = await fetch('/api/chunking/strategies');
+                const data = await response.json();
+                
+                const select = document.getElementById('strategy-select');
+                select.innerHTML = '<option value="">-- Select Strategy --</option>';
+                
+                for (const [key, strategy] of Object.entries(data.strategies)) {
+                    const option = document.createElement('option');
+                    option.value = key;
+                    option.textContent = `${strategy.name} - ${strategy.description}`;
+                    select.appendChild(option);
+                }
+            } catch (error) {
+                console.error('Error loading strategies:', error);
+            }
+        }
+        
+        // Update strategy params UI
+        function updateStrategyParams() {
+            const select = document.getElementById('strategy-select');
+            currentStrategy = select.value;
+            const paramsDiv = document.getElementById('strategy-params');
+            
+            if (!currentStrategy) {
+                paramsDiv.innerHTML = '';
+                return;
+            }
+            
+            fetch('/api/chunking/strategies')
+                .then(r => r.json())
+                .then(data => {
+                    const strategy = data.strategies[currentStrategy];
+                    let html = '<label>Parameters</label>';
+                    
+                    for (const [key, param] of Object.entries(strategy.params)) {
+                        if (param.type === 'select' && param.options) {
+                            // Render select dropdown
+                            html += `
+                                <div style="margin-bottom: 10px;">
+                                    <label style="font-size: 0.9em;">${param.label}:</label>
+                                    <select id="param-${key}" style="width: 200px;" onchange="updateOllamaFields()">
+                                        ${param.options.map(opt => 
+                                            `<option value="${opt.value}" ${opt.value === param.default ? 'selected' : ''}>${opt.label}</option>`
+                                        ).join('')}
+                                    </select>
+                                </div>
+                            `;
+                        } else {
+                            // Render input thông thường
+                            html += `
+                                <div style="margin-bottom: 10px;" id="param-wrapper-${key}">
+                                    <label style="font-size: 0.9em;">${param.label}:</label>
+                                    <input type="${param.type}" id="param-${key}" value="${param.default}" 
+                                           style="width: 200px;" placeholder="${param.placeholder || ''}">
+                                </div>
+                            `;
+                        }
+                    }
+                    
+                    paramsDiv.innerHTML = html;
+                    
+                    // Hide/show fields based on model selection
+                    updateOllamaFields();
+                });
+        }
+        
+        // Update Ollama fields visibility based on model selection
+        function updateOllamaFields() {
+            const modelSelect = document.getElementById('param-model');
+            if (!modelSelect) return;
+            
+            const selectedModel = modelSelect.value;
+            const ollamaUrlWrapper = document.getElementById('param-wrapper-ollama_url');
+            const ollamaModelWrapper = document.getElementById('param-wrapper-ollama_model');
+            
+            if (selectedModel === 'ollama') {
+                // Show Ollama fields
+                if (ollamaUrlWrapper) ollamaUrlWrapper.style.display = 'block';
+                if (ollamaModelWrapper) ollamaModelWrapper.style.display = 'block';
+            } else {
+                // Hide Ollama fields (sentence-transformers)
+                if (ollamaUrlWrapper) ollamaUrlWrapper.style.display = 'none';
+                if (ollamaModelWrapper) ollamaModelWrapper.style.display = 'none';
+            }
+        }
+        
+        // Load documents
+        async function loadDocuments() {
+            try {
+                const response = await fetch('/api/documents');
+                const data = await response.json();
+                
+                if (data.success) {
+                    renderDocuments(data.documents);
+                }
+            } catch (error) {
+                console.error('Error loading documents:', error);
+                showAlert('step1-alerts', 'Error loading documents', 'error');
+            }
+        }
+        
+        // Escape HTML helper
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Render documents table
+        function renderDocuments(documents) {
+            const tbody = document.getElementById('documents-tbody');
+            
+            if (documents.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px; color: #999;">Không tìm thấy tài liệu nào</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = documents.map(doc => {
+                const isMarkdown = doc.filename.toLowerCase().endsWith('.md');
+                const fileIcon = isMarkdown ? '📝' : '📄';
+                const fileType = isMarkdown ? 'Markdown' : 'Text';
+                
+                return `
+                    <tr>
+                        <td>
+                            <input type="checkbox" class="doc-checkbox" value="${doc.doc_id}" 
+                                   onchange="updateSelectedDocs()">
+                        </td>
+                        <td>
+                            <span class="doc-file-icon">${fileIcon}</span>
+                            <span class="doc-filename">${escapeHtml(doc.filename)}</span>
+                            <span style="color: #999; font-size: 0.85em; margin-left: 8px;">${fileType}</span>
+                        </td>
+                        <td class="doc-stats">${doc.num_lines.toLocaleString()}</td>
+                        <td class="doc-stats">${doc.num_chars.toLocaleString()}</td>
+                        <td class="doc-stats">${(doc.file_size / 1024).toFixed(2)} KB</td>
+                        <td>
+                            <button onclick="viewDocument(${doc.doc_id}, '${escapeHtml(doc.filename)}')" 
+                                    style="padding: 6px 14px; font-size: 13px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background 0.3s;"
+                                    onmouseover="this.style.background='#5568d3'"
+                                    onmouseout="this.style.background='#667eea'">View</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        // Upload file
+        async function uploadFile() {
+            const input = document.getElementById('file-input');
+            const file = input.files[0];
+            
+            if (!file) {
+                showAlert('step1-alerts', 'Please select a file', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/api/documents/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert('step1-alerts', 'File uploaded successfully', 'success');
+                    input.value = '';
+                    loadDocuments();
+                } else {
+                    showAlert('step1-alerts', data.error || 'Upload failed', 'error');
+                }
+            } catch (error) {
+                showAlert('step1-alerts', 'Error uploading file', 'error');
+            }
+        }
+        
+        // Paste text
+        async function pasteText() {
+            const text = document.getElementById('paste-text').value.trim();
+            
+            if (!text) {
+                showAlert('step1-alerts', 'Please enter text', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/documents/paste', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: text, extension: '.md'})
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert('step1-alerts', 'Text saved successfully', 'success');
+                    document.getElementById('paste-text').value = '';
+                    loadDocuments();
+                } else {
+                    showAlert('step1-alerts', data.error || 'Save failed', 'error');
+                }
+            } catch (error) {
+                showAlert('step1-alerts', 'Error saving text', 'error');
+            }
+        }
+        
+        // Discover documents
+        async function discoverDocuments() {
+            try {
+                const response = await fetch('/api/documents/discover', {method: 'POST'});
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert('step1-alerts', data.message, 'success');
+                    loadDocuments();
+                } else {
+                    showAlert('step1-alerts', data.error || 'Discovery failed', 'error');
+                }
+            } catch (error) {
+                showAlert('step1-alerts', 'Error discovering documents', 'error');
+            }
+        }
+        
+        // Search documents
+        function searchDocuments() {
+            const search = document.getElementById('search-box').value;
+            
+            fetch(`/api/documents?search=${encodeURIComponent(search)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        renderDocuments(data.documents);
+                    }
+                });
+        }
+        
+        // Update selected documents
+        function updateSelectedDocs() {
+            selectedDocIds = Array.from(document.querySelectorAll('.doc-checkbox:checked'))
+                .map(cb => parseInt(cb.value));
+            
+            const btn = document.getElementById('chunk-btn');
+            btn.disabled = selectedDocIds.length === 0;
+            
+            // Update selected docs display in step 2
+            const selectedDiv = document.getElementById('selected-docs');
+            if (selectedDocIds.length > 0) {
+                fetch('/api/documents')
+                    .then(r => r.json())
+                    .then(data => {
+                        const selected = data.documents.filter(d => selectedDocIds.includes(d.doc_id));
+                        selectedDiv.innerHTML = selected.map(d => d.filename).join(', ');
+                    });
+            } else {
+                selectedDiv.innerHTML = 'No documents selected';
+            }
+        }
+        
+        // Toggle select all
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('select-all').checked;
+            document.querySelectorAll('.doc-checkbox').forEach(cb => {
+                cb.checked = selectAll;
+            });
+            updateSelectedDocs();
+        }
+        
+        // Populate filter dropdown
+        async function populateFilterDropdown() {
+            try {
+                const response = await fetch('/api/documents');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const filterSelect = document.getElementById('filter-doc');
+                    if (!filterSelect) {
+                        console.error('Filter dropdown not found');
+                        return;
+                    }
+                    
+                    const currentValue = filterSelect.value; // Lưu giá trị hiện tại
+                    filterSelect.innerHTML = '<option value="">All Documents</option>';
+                    
+                    // Đảm bảo selectedDocIds là array và không rỗng
+                    if (selectedDocIds && selectedDocIds.length > 0) {
+                        const selected = data.documents.filter(d => selectedDocIds.includes(d.doc_id));
+                        
+                        if (selected.length > 0) {
+                            selected.forEach(doc => {
+                                const option = document.createElement('option');
+                                option.value = doc.doc_id.toString();
+                                option.textContent = doc.filename;
+                                filterSelect.appendChild(option);
+                            });
+                        } else {
+                            console.warn('No matching documents found for selectedDocIds:', selectedDocIds);
+                        }
+                    } else {
+                        console.warn('selectedDocIds is empty or undefined');
+                    }
+                    
+                    // Enable dropdown và đảm bảo có thể click được
+                    filterSelect.disabled = false;
+                    filterSelect.style.pointerEvents = 'auto';
+                    filterSelect.style.opacity = '1';
+                    
+                    // Khôi phục giá trị đã chọn nếu vẫn hợp lệ
+                    if (currentValue) {
+                        const optionExists = Array.from(filterSelect.options).some(opt => opt.value === currentValue);
+                        if (optionExists) {
+                            filterSelect.value = currentValue;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error populating filter dropdown:', error);
+            }
+        }
+        
+        // Go to chunking step
+        function goToChunking() {
+            if (selectedDocIds.length === 0) return;
+            
+            document.getElementById('step2').scrollIntoView({behavior: 'smooth'});
+            document.getElementById('step2').classList.add('active');
+            
+            // Update filter dropdown
+            populateFilterDropdown();
+        }
+        
+        // Run chunking
+        async function runChunking() {
+            if (selectedDocIds.length === 0) {
+                showAlert('step2-alerts', 'Please select documents first', 'error');
+                return;
+            }
+            
+            if (!currentStrategy) {
+                showAlert('step2-alerts', 'Please select a strategy', 'error');
+                return;
+            }
+            
+            // Show loading indicator
+            const runBtn = document.getElementById('run-chunking-btn');
+            const originalText = runBtn.textContent;
+            runBtn.disabled = true;
+            runBtn.innerHTML = '<span class="loading"></span> Đang xử lý...';
+            
+            try {
+                // Get params
+                const params = {};
+                const strategiesData = await fetch('/api/chunking/strategies').then(r => r.json());
+                const strategy = strategiesData.strategies[currentStrategy];
+                
+                for (const key of Object.keys(strategy.params)) {
+                    const input = document.getElementById(`param-${key}`);
+                    if (input) {
+                        if (input.tagName === 'SELECT') {
+                            params[key] = input.value;
+                        } else if (input.type === 'number') {
+                            params[key] = parseInt(input.value);
+                        } else {
+                            params[key] = input.value;
+                        }
+                    }
+                }
+                
+                // Run chunking
+                const response = await fetch('/api/chunking/run', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        doc_ids: selectedDocIds,
+                        strategy: currentStrategy,
+                        params: params
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert('step2-alerts', data.message, 'success');
+                    document.getElementById('step2').classList.add('completed');
+                    
+                    // Show statistics
+                    renderStatistics(data.statistics);
+                    
+                    // Populate filter dropdown với selected documents
+                    await populateFilterDropdown();
+                    
+                    // Reset pagination
+                    currentPage = 0;
+                    
+                    // Load and display chunks
+                    await loadChunks(true);
+                } else {
+                    showAlert('step2-alerts', data.error || 'Chunking failed', 'error');
+                }
+            } catch (error) {
+                console.error('Error running chunking:', error);
+                showAlert('step2-alerts', 'Error running chunking: ' + error.message, 'error');
+            } finally {
+                // Hide loading indicator
+                runBtn.disabled = false;
+                runBtn.textContent = originalText;
+            }
+        }
+        
+        // Render statistics
+        function renderStatistics(stats) {
+            const statsDiv = document.getElementById('chunk-statistics');
+            statsDiv.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-value">${stats.total_chunks}</div>
+                    <div class="stat-label">Total Chunks</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${stats.avg_len}</div>
+                    <div class="stat-label">Avg Length</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${stats.min_len}</div>
+                    <div class="stat-label">Min Length</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${stats.max_len}</div>
+                    <div class="stat-label">Max Length</div>
+                </div>
+            `;
+        }
+        
+        // Load chunks
+        async function loadChunks(reset = false) {
+            if (reset) {
+                currentPage = 0;
+                chunksData = {};
+            }
+            
+            const filterSelect = document.getElementById('filter-doc');
+            if (!filterSelect) {
+                console.error('Filter dropdown not found');
+                return;
+            }
+            
+            const filterDocId = filterSelect.value;
+            const docId = filterDocId ? parseInt(filterDocId) : null;
+            
+            try {
+                let url = `/api/chunks?limit=${chunksPerPage}&offset=${currentPage * chunksPerPage}`;
+                if (docId) {
+                    url += `&doc_id=${docId}&strategy=${currentStrategy}`;
+                } else {
+                    url += `&strategy=${currentStrategy}`;
+                }
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const newChunks = data.chunks;
+                    
+                    if (reset) {
+                        currentChunks = newChunks;
+                    } else {
+                        currentChunks = currentChunks.concat(newChunks);
+                    }
+                    
+                    renderChunks(currentChunks);
+                    document.getElementById('chunk-preview-section').style.display = 'block';
+                    
+                    // Update pagination controls
+                    updatePaginationControls(data.total, newChunks.length);
+                }
+            } catch (error) {
+                console.error('Error loading chunks:', error);
+            }
+        }
+        
+        // Update pagination controls
+        function updatePaginationControls(total, loadedCount) {
+            const paginationDiv = document.getElementById('pagination');
+            if (!paginationDiv) return;
+            
+            const hasMore = loadedCount === chunksPerPage && currentChunks.length < (total || 999999);
+            
+            if (hasMore) {
+                paginationDiv.innerHTML = `
+                    <button onclick="loadMoreChunks()" class="btn-secondary" style="padding: 10px 20px;">
+                        Load More (${currentChunks.length}/${total || '?'} chunks)
+                    </button>
+                `;
+            } else if (currentChunks.length > 0) {
+                paginationDiv.innerHTML = `
+                    <div style="text-align: center; color: #666; padding: 10px;">
+                        Đã hiển thị tất cả ${currentChunks.length} chunks
+                    </div>
+                `;
+            } else {
+                paginationDiv.innerHTML = '';
+            }
+        }
+        
+        // Load more chunks
+        function loadMoreChunks() {
+            currentPage++;
+            loadChunks(false);
+        }
+        
+        // Render chunks
+        function renderChunks(chunks) {
+            const container = document.getElementById('chunks-container');
+            
+            if (chunks.length === 0) {
+                container.innerHTML = '<p>No chunks found</p>';
+                return;
+            }
+            
+            // Lưu chunks data vào biến global để dùng cho expand
+            chunksData = {};
+            chunks.forEach((chunk, idx) => {
+                chunksData[idx] = chunk.text;
+            });
+            
+            // Escape HTML để tránh XSS
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+            
+            container.innerHTML = chunks.map((chunk, idx) => {
+                const fullText = chunk.text;
+                const preview = fullText.length > 300 ? fullText.substring(0, 300) + '...' : fullText;
+                
+                return `
+                    <div class="chunk-card">
+                        <div class="chunk-header">
+                            <span>Position: ${chunk.position} | Length: ${chunk.len_chars} chars</span>
+                        </div>
+                        <div class="chunk-text" id="chunk-text-${idx}">
+                            ${escapeHtml(preview)}
+                        </div>
+                        ${fullText.length > 300 ? `
+                            <button class="expand-btn" onclick="expandChunk(${idx})">
+                                Expand
+                            </button>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Expand chunk
+        function expandChunk(idx) {
+            const textDiv = document.getElementById(`chunk-text-${idx}`);
+            if (!textDiv) {
+                console.error('Chunk text div not found:', idx);
+                return;
+            }
+            
+            const fullText = chunksData[idx];
+            if (!fullText) {
+                console.error('Full text not found for chunk:', idx);
+                return;
+            }
+            
+            // Escape HTML để hiển thị an toàn
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+            
+            if (textDiv.classList.contains('expanded')) {
+                // Collapse - hiển thị preview
+                const preview = fullText.length > 300 ? fullText.substring(0, 300) + '...' : fullText;
+                textDiv.innerHTML = escapeHtml(preview);
+                textDiv.classList.remove('expanded');
+                
+                // Update button text
+                const btn = textDiv.nextElementSibling;
+                if (btn && btn.classList.contains('expand-btn')) {
+                    btn.textContent = 'Expand';
+                }
+            } else {
+                // Expand - hiển thị full text
+                textDiv.innerHTML = escapeHtml(fullText);
+                textDiv.classList.add('expanded');
+                
+                // Update button text
+                const btn = textDiv.nextElementSibling;
+                if (btn && btn.classList.contains('expand-btn')) {
+                    btn.textContent = 'Collapse';
+                }
+            }
+        }
+        
+        // Simple markdown renderer (basic support)
+        function renderMarkdown(text) {
+            let html = text;
+            
+            // Protect code blocks first
+            const codeBlocks = [];
+            html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
+                const id = `__CODE_BLOCK_${codeBlocks.length}__`;
+                codeBlocks.push(`<pre><code>${escapeHtml(code.trim())}</code></pre>`);
+                return id;
+            });
+            
+            // Escape HTML
+            html = escapeHtml(html);
+            
+            // Restore code blocks
+            codeBlocks.forEach((block, i) => {
+                html = html.replace(`__CODE_BLOCK_${i}__`, block);
+            });
+            
+            // Process line by line
+            const lines = html.split('\n');
+            const result = [];
+            let inList = false;
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const trimmed = line.trim();
+                
+                // Headers
+                if (trimmed.match(/^#### (.*)$/)) {
+                    if (inList) { result.push('</ul>'); inList = false; }
+                    result.push(`<h4>${trimmed.substring(5)}</h4>`);
+                    continue;
+                }
+                if (trimmed.match(/^### (.*)$/)) {
+                    if (inList) { result.push('</ul>'); inList = false; }
+                    result.push(`<h3>${trimmed.substring(4)}</h3>`);
+                    continue;
+                }
+                if (trimmed.match(/^## (.*)$/)) {
+                    if (inList) { result.push('</ul>'); inList = false; }
+                    result.push(`<h2>${trimmed.substring(3)}</h2>`);
+                    continue;
+                }
+                if (trimmed.match(/^# (.*)$/)) {
+                    if (inList) { result.push('</ul>'); inList = false; }
+                    result.push(`<h1>${trimmed.substring(2)}</h1>`);
+                    continue;
+                }
+                
+                // Lists
+                if (trimmed.match(/^[\*\-] (.*)$/) || trimmed.match(/^\d+\. (.*)$/)) {
+                    const listItem = trimmed.replace(/^[\*\-] (.*)$/, '$1').replace(/^\d+\. (.*)$/, '$1');
+                    if (!inList) {
+                        result.push('<ul>');
+                        inList = true;
+                    }
+                    result.push(`<li>${listItem}</li>`);
+                    continue;
+                }
+                
+                // End list on empty line or other content
+                if (inList && trimmed === '') {
+                    result.push('</ul>');
+                    inList = false;
+                    continue;
+                }
+                
+                // Paragraphs
+                if (trimmed === '') {
+                    if (inList) { result.push('</ul>'); inList = false; }
+                    result.push('');
+                    continue;
+                }
+                
+                // Regular paragraph
+                if (inList) { result.push('</ul>'); inList = false; }
+                
+                // Process inline formatting
+                let processed = trimmed;
+                processed = processed.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                processed = processed.replace(/\*(.*?)\*/g, '<em>$1</em>');
+                processed = processed.replace(/`([^`]+)`/g, '<code>$1</code>');
+                processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+                
+                result.push(`<p>${processed}</p>`);
+            }
+            
+            // Close any open list
+            if (inList) {
+                result.push('</ul>');
+            }
+            
+            return result.join('\n');
+        }
+        
+        // View document content
+        async function viewDocument(docId, filename) {
+            try {
+                const response = await fetch(`/api/documents/${docId}/content`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('modal-title').textContent = filename;
+                    const modalBody = document.getElementById('modal-body');
+                    const isMarkdown = filename.toLowerCase().endsWith('.md');
+                    
+                    if (isMarkdown) {
+                        // Render markdown
+                        modalBody.className = 'modal-body markdown-content';
+                        modalBody.innerHTML = renderMarkdown(data.content);
+                    } else {
+                        // Plain text
+                        modalBody.className = 'modal-body';
+                        const pre = document.createElement('pre');
+                        pre.textContent = data.content;
+                        modalBody.innerHTML = '';
+                        modalBody.appendChild(pre);
+                    }
+                    
+                    document.getElementById('view-modal').style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error loading document:', error);
+            }
+        }
+        
+        // Close modal
+        function closeModal() {
+            document.getElementById('view-modal').style.display = 'none';
+        }
+        
+        // Show alert
+        function showAlert(containerId, message, type) {
+            const container = document.getElementById(containerId);
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            container.innerHTML = '';
+            container.appendChild(alert);
+            
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('view-modal');
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+    </script>
+</body>
+</html>

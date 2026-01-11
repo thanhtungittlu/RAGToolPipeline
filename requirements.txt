@@ -1,0 +1,15 @@
+Flask==3.0.0
+Werkzeug==3.0.1
+requests==2.31.0
+numpy==1.24.3
+python-dotenv==1.0.0
+
+# Optional: Cho semantic chunking thực sự
+# Cài một trong hai options sau:
+
+# Option 1: Sentence Transformers (khuyến nghị - không cần server riêng)
+# sentence-transformers>=2.2.0
+
+# Option 2: Ollama (cần chạy Ollama server riêng)
+# Không cần cài package, chỉ cần có Ollama server chạy tại http://localhost:11434
+# Download tại: https://ollama.ai
