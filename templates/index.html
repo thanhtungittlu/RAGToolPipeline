@@ -616,14 +616,67 @@
                 </div>
             </div>
             
-            <!-- Step 3: Embeddings (Placeholder) -->
+            <!-- Step 3: Embeddings -->
             <div class="step" id="step3">
                 <div class="step-header">
                     <div class="step-number">3</div>
                     <div class="step-title">Embeddings</div>
                 </div>
                 <div class="step-content">
-                    <div class="placeholder">Coming soon...</div>
+                    <div id="step3-alerts"></div>
+                    
+                    <div class="section">
+                        <h3>Generate Embeddings</h3>
+                        <p>Generate embeddings for chunks created in Step 2. You need to run chunking first.</p>
+                        
+                        <div style="margin: 20px 0;">
+                            <label for="embedding-method" style="display: block; margin-bottom: 8px; font-weight: bold;">
+                                Embedding Method:
+                            </label>
+                            <select id="embedding-method" style="width: 100%; max-width: 400px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 15px;">
+                                <option value="ollama">Ollama (Local Server)</option>
+                                <option value="sentence-transformers">Sentence Transformers</option>
+                            </select>
+                        </div>
+                        
+                        <div style="margin: 20px 0;">
+                            <button id="generate-embeddings-btn" class="btn btn-primary" onclick="generateEmbeddings()" disabled>
+                                Generate Embeddings
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="embedding-results-section" style="display: none;">
+                        <div class="section">
+                            <h3>Embedding Results</h3>
+                            <div id="embedding-info" style="margin: 15px 0; padding: 15px; background: #f5f5f5; border-radius: 6px;">
+                                <p><strong>Total Embeddings:</strong> <span id="embedding-total">0</span></p>
+                                <p><strong>Embedding Dimension:</strong> <span id="embedding-dim">0</span></p>
+                                <p><strong>Method Used:</strong> <span id="embedding-method-used">-</span></p>
+                            </div>
+                        </div>
+                        
+                        <div class="section">
+                            <h3>Embedding Quality Evaluation</h3>
+                            <p>All three metrics are evaluated automatically after embedding generation:</p>
+                            
+                            <div style="margin: 20px 0;">
+                                <label for="n-clusters" style="display: block; margin-bottom: 8px; font-weight: bold;">
+                                    Number of Clusters (for clustering-based evaluation):
+                                </label>
+                                <input type="number" id="n-clusters" value="5" min="2" max="20" style="width: 100px; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                            </div>
+                            
+                            <div id="evaluation-results-section" style="margin-top: 20px;">
+                                <div class="section">
+                                    <h4>Evaluation Results</h4>
+                                    <div id="evaluation-results" style="margin: 20px 0;">
+                                        <!-- Results will be displayed here as table -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -682,6 +735,7 @@
         let currentPage = 0;
         let filteredFilename = ''; // Current filter selection
         let chunksData = {}; // Lưu full text của chunks để expand
+        let allEmbeddings = []; // Store generated embeddings
         
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
@@ -1096,6 +1150,9 @@
                     renderChunks(displayedChunks);
                     updateLoadMoreButton(allChunks);
                     document.getElementById('chunk-preview-section').style.display = 'block';
+                    
+                    // Update generate embeddings button
+                    updateGenerateEmbeddingsButton();
                 } else {
                     showAlert('step2-alerts', data.error || 'Chunking failed', 'error');
                 }
@@ -1233,6 +1290,393 @@
             }
         }
         
+        // Update generate embeddings button state
+        function updateGenerateEmbeddingsButton() {
+            const btn = document.getElementById('generate-embeddings-btn');
+            if (btn) {
+                btn.disabled = allChunks.length === 0;
+            }
+        }
+        
+        // Generate embeddings
+        async function generateEmbeddings() {
+            if (allChunks.length === 0) {
+                showAlert('step3-alerts', 'No chunks available. Please run chunking first.', 'error');
+                return;
+            }
+            
+            const btn = document.getElementById('generate-embeddings-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+            
+            try {
+                // Get embedding method
+                const method = document.getElementById('embedding-method').value;
+                const methodName = method === 'ollama' ? 'Ollama' : 'Sentence Transformers';
+                
+                // Prepare chunks data
+                const chunksData = allChunks.map((chunk, index) => ({
+                    chunk_id: index,
+                    filename: chunk.filename || '',
+                    position: chunk.position || 0,
+                    text: chunk.text || ''
+                }));
+                
+                const response = await fetch('/api/embeddings/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        chunks: chunksData,
+                        method: method
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    allEmbeddings = data.embeddings || [];
+                    
+                    // Show embedding results
+                    const totalEl = document.getElementById('embedding-total');
+                    const dimEl = document.getElementById('embedding-dim');
+                    const methodEl = document.getElementById('embedding-method-used');
+                    
+                    if (totalEl) totalEl.textContent = data.total || 0;
+                    if (dimEl) dimEl.textContent = data.embedding_dim || 0;
+                    if (methodEl) methodEl.textContent = methodName;
+                    
+                    const resultsSection = document.getElementById('embedding-results-section');
+                    if (resultsSection) resultsSection.style.display = 'block';
+                    
+                    showAlert('step3-alerts', `Successfully generated ${data.total} embeddings using ${methodName}`, 'success');
+                    
+                    // Automatically evaluate all metrics
+                    await evaluateAllEmbeddings();
+                    
+                    // Scroll to results
+                    document.getElementById('embedding-results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else {
+                    showAlert('step3-alerts', data.error || 'Failed to generate embeddings', 'error');
+                }
+            } catch (error) {
+                console.error('Error generating embeddings:', error);
+                showAlert('step3-alerts', 'Error generating embeddings: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+        
+        // Evaluate all embeddings metrics
+        async function evaluateAllEmbeddings() {
+            if (allEmbeddings.length === 0) {
+                console.warn('No embeddings to evaluate');
+                return;
+            }
+            
+            // Clustering metrics need at least 2 embeddings
+            if (allEmbeddings.length < 2) {
+                const resultsDiv = document.getElementById('evaluation-results');
+                if (resultsDiv) {
+                    resultsDiv.innerHTML = `
+                        <div style="padding: 20px; text-align: center; color: #666;">
+                            <p>Evaluation requires at least 2 embeddings for clustering metrics.</p>
+                            <p>Current embeddings: ${allEmbeddings.length}</p>
+                        </div>
+                    `;
+                }
+                console.info('Skipping evaluation: clustering metrics require at least 2 embeddings');
+                return;
+            }
+            
+            try {
+                const nClustersEl = document.getElementById('n-clusters');
+                const nClusters = nClustersEl ? parseInt(nClustersEl.value) || 5 : 5;
+                
+                // Ensure n_clusters doesn't exceed number of embeddings
+                const maxClusters = Math.min(nClusters, allEmbeddings.length);
+                
+                console.log('Evaluating embeddings with', allEmbeddings.length, 'embeddings, n_clusters:', maxClusters);
+                
+                const response = await fetch('/api/embeddings/evaluate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        embeddings: allEmbeddings,
+                        n_clusters: maxClusters
+                        // metric is None, so all metrics will be evaluated
+                    })
+                });
+                
+                const data = await response.json();
+                console.log('Evaluation response:', data);
+                
+                // Display results if available, even if success is false
+                // (some metrics may have failed but others succeeded)
+                if (data.results) {
+                    displayEvaluationResults(data.results);
+                    // Only show error if all metrics failed
+                    if (!data.success) {
+                        const hasAnySuccess = Object.values(data.results).some(
+                            r => r && r.success && r.score !== null && r.score !== undefined
+                        );
+                        if (!hasAnySuccess) {
+                            const errorMsg = data.error || 'Failed to evaluate embeddings. Please ensure you have at least 2 embeddings for clustering metrics.';
+                            showAlert('step3-alerts', errorMsg, 'error');
+                            console.warn('All evaluation metrics failed:', data);
+                        } else {
+                            // Some metrics succeeded, show warning instead of error
+                            console.info('Some evaluation metrics failed, but results are displayed');
+                        }
+                    }
+                } else {
+                    // No results at all, show error
+                    const errorMsg = data.error || 'Failed to evaluate embeddings. Please ensure you have at least 2 embeddings for clustering metrics.';
+                    showAlert('step3-alerts', errorMsg, 'error');
+                    console.error('Evaluation error:', data);
+                }
+            } catch (error) {
+                console.error('Error evaluating embeddings:', error);
+                showAlert('step3-alerts', 'Error evaluating embeddings: ' + error.message, 'error');
+            }
+        }
+        
+        // Display evaluation results as table
+        function displayEvaluationResults(results) {
+            const resultsDiv = document.getElementById('evaluation-results');
+            if (!resultsDiv) {
+                console.error('evaluation-results element not found');
+                return;
+            }
+            
+            const metricNames = {
+                'silhouette': 'Silhouette Score',
+                'davies_bouldin': 'Davies-Bouldin Index',
+                'calinski_harabasz': 'Calinski-Harabasz Index'
+            };
+            
+            const metricDescriptions = {
+                'silhouette': 'Range: -1 to 1. Higher is better. Measures how similar an object is to its own cluster compared to other clusters.',
+                'davies_bouldin': 'Lower is better. Measures the average similarity ratio of clusters.',
+                'calinski_harabasz': 'Higher is better. Ratio of between-cluster variance to within-cluster variance.'
+            };
+            
+            // Build table rows
+            let tableRows = '';
+            
+            // Silhouette Score
+            if (results.silhouette && results.silhouette.score !== undefined) {
+                const result = results.silhouette;
+                const qualityLevel = result.quality_level || 'UNKNOWN';
+                const qualityColor = getQualityColor(qualityLevel);
+                tableRows += `
+                    <tr>
+                        <td><strong>${metricNames.silhouette}</strong></td>
+                        <td style="font-size: 18px; font-weight: bold; color: ${qualityColor}; text-align: center;">
+                            ${result.score.toFixed(4)}
+                        </td>
+                        <td style="text-align: center;">
+                            <span style="padding: 5px 12px; background: ${qualityColor}20; border-radius: 4px; font-weight: bold; color: ${qualityColor};">
+                                ${qualityLevel}
+                            </span>
+                        </td>
+                        <td style="text-align: center; color: #666;">
+                            ${result.n_clusters || 'N/A'}
+                        </td>
+                        <td style="font-size: 0.85em; color: #555;">
+                            ${metricDescriptions.silhouette}
+                        </td>
+                    </tr>
+                `;
+            } else {
+                tableRows += `
+                    <tr>
+                        <td><strong>${metricNames.silhouette}</strong></td>
+                        <td colspan="4" style="color: #999; font-style: italic; text-align: center;">Evaluation failed</td>
+                    </tr>
+                `;
+            }
+            
+            // Davies-Bouldin Index
+            if (results.davies_bouldin && results.davies_bouldin.score !== undefined) {
+                const result = results.davies_bouldin;
+                const qualityLevel = result.quality_level || 'UNKNOWN';
+                const qualityColor = getQualityColor(qualityLevel);
+                tableRows += `
+                    <tr>
+                        <td><strong>${metricNames.davies_bouldin}</strong></td>
+                        <td style="font-size: 18px; font-weight: bold; color: ${qualityColor}; text-align: center;">
+                            ${result.score.toFixed(4)}
+                        </td>
+                        <td style="text-align: center;">
+                            <span style="padding: 5px 12px; background: ${qualityColor}20; border-radius: 4px; font-weight: bold; color: ${qualityColor};">
+                                ${qualityLevel}
+                            </span>
+                        </td>
+                        <td style="text-align: center; color: #666;">
+                            ${result.n_clusters || 'N/A'}
+                        </td>
+                        <td style="font-size: 0.85em; color: #555;">
+                            ${metricDescriptions.davies_bouldin}
+                        </td>
+                    </tr>
+                `;
+            } else {
+                tableRows += `
+                    <tr>
+                        <td><strong>${metricNames.davies_bouldin}</strong></td>
+                        <td colspan="4" style="color: #999; font-style: italic; text-align: center;">Evaluation failed</td>
+                    </tr>
+                `;
+            }
+            
+            // Calinski-Harabasz Index
+            if (results.calinski_harabasz && results.calinski_harabasz.score !== undefined) {
+                const result = results.calinski_harabasz;
+                const qualityLevel = result.quality_level || 'UNKNOWN';
+                const qualityColor = getQualityColor(qualityLevel);
+                tableRows += `
+                    <tr>
+                        <td><strong>${metricNames.calinski_harabasz}</strong></td>
+                        <td style="font-size: 18px; font-weight: bold; color: ${qualityColor}; text-align: center;">
+                            ${result.score.toFixed(4)}
+                        </td>
+                        <td style="text-align: center;">
+                            <span style="padding: 5px 12px; background: ${qualityColor}20; border-radius: 4px; font-weight: bold; color: ${qualityColor};">
+                                ${qualityLevel}
+                            </span>
+                        </td>
+                        <td style="text-align: center; color: #666;">
+                            ${result.n_clusters || 'N/A'}
+                        </td>
+                        <td style="font-size: 0.85em; color: #555;">
+                            ${metricDescriptions.calinski_harabasz}
+                        </td>
+                    </tr>
+                `;
+            } else {
+                tableRows += `
+                    <tr>
+                        <td><strong>${metricNames.calinski_harabasz}</strong></td>
+                        <td colspan="4" style="color: #999; font-style: italic; text-align: center;">Evaluation failed</td>
+                    </tr>
+                `;
+            }
+            
+            const html = `
+                <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <thead>
+                        <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                            <th style="padding: 15px; text-align: left; font-weight: 600;">Metric</th>
+                            <th style="padding: 15px; text-align: center; font-weight: 600;">Score</th>
+                            <th style="padding: 15px; text-align: center; font-weight: 600;">Quality Level</th>
+                            <th style="padding: 15px; text-align: center; font-weight: 600;">Clusters</th>
+                            <th style="padding: 15px; text-align: left; font-weight: 600;">Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRows}
+                    </tbody>
+                </table>
+            `;
+            
+            resultsDiv.innerHTML = html;
+        }
+        
+        // Get color based on quality level
+        function getQualityColor(level) {
+            switch(level) {
+                case 'EXCELLENT':
+                    return '#4CAF50'; // Green
+                case 'VERY GOOD':
+                    return '#8BC34A'; // Light Green
+                case 'GOOD':
+                    return '#2196F3'; // Blue
+                case 'FAIR':
+                    return '#FF9800'; // Orange
+                case 'BAD':
+                    return '#F44336'; // Red
+                default:
+                    return '#9E9E9E'; // Grey
+            }
+        }
+        
+        // Evaluate embeddings
+        async function evaluateEmbeddings() {
+            if (allEmbeddings.length === 0) {
+                showAlert('step3-alerts', 'No embeddings available. Please generate embeddings first.', 'error');
+                return;
+            }
+            
+            const btn = document.getElementById('evaluate-embeddings-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Evaluating...';
+            
+            try {
+                const metric = document.getElementById('evaluation-metric').value;
+                const nClusters = parseInt(document.getElementById('n-clusters').value) || 5;
+                
+                const response = await fetch('/api/embeddings/evaluate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        embeddings: allEmbeddings,
+                        metric: metric,
+                        n_clusters: nClusters
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.score !== null && data.score !== undefined) {
+                    // Display results
+                    const resultsDiv = document.getElementById('evaluation-results');
+                    const metricName = {
+                        'silhouette': 'Silhouette Score',
+                        'davies_bouldin': 'Davies-Bouldin Index',
+                        'calinski_harabasz': 'Calinski-Harabasz Index'
+                    }[metric] || metric;
+                    
+                    resultsDiv.innerHTML = `
+                        <h4 style="margin-top: 0; color: #4CAF50;">${metricName}</h4>
+                        <div style="margin: 15px 0;">
+                            <div style="font-size: 24px; font-weight: bold; color: #2196F3; margin: 10px 0;">
+                                Score: ${data.score.toFixed(4)}
+                            </div>
+                            <div style="margin: 10px 0; color: #666;">
+                                Number of Clusters: ${data.n_clusters || nClusters}
+                            </div>
+                            <div style="margin: 10px 0; padding: 10px; background: white; border-radius: 4px; color: #555;">
+                                ${data.description || ''}
+                            </div>
+                        </div>
+                    `;
+                    
+                    document.getElementById('evaluation-results-section').style.display = 'block';
+                    showAlert('step3-alerts', 'Evaluation completed successfully', 'success');
+                    
+                    // Scroll to results
+                    document.getElementById('evaluation-results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else {
+                    showAlert('step3-alerts', data.error || 'Failed to evaluate embeddings', 'error');
+                    document.getElementById('evaluation-results-section').style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error evaluating embeddings:', error);
+                showAlert('step3-alerts', 'Error evaluating embeddings: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
         
         // Render chunks
         function renderChunks(chunks) {

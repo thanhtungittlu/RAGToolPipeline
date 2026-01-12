@@ -9,6 +9,7 @@ from pathlib import Path
 from config import DATA_DIR, ALLOWED_EXTENSIONS
 from services.document_service import DocumentService
 from services.chunking_service import ChunkingService
+from services.embedding_service import EmbeddingService
 
 logger = logging.getLogger(__name__)
 
@@ -241,6 +242,152 @@ def register_routes(app: Flask):
             'success': False,
             'error': 'Chunks are returned directly from /api/chunking/run endpoint'
         }), 400
+    
+    @app.route('/api/embeddings/generate', methods=['POST'])
+    def generate_embeddings():
+        """API: Generate embeddings for chunks"""
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({'success': False, 'error': 'No data provided'}), 400
+            
+            chunks = data.get('chunks', [])
+            if not chunks:
+                return jsonify({'success': False, 'error': 'No chunks provided'}), 400
+            
+            # Get embedding method
+            method = data.get('method', 'ollama')  # 'ollama' or 'sentence-transformers'
+            
+            # Extract text from chunks
+            texts = [chunk.get('text', '') for chunk in chunks]
+            if not any(texts):
+                return jsonify({'success': False, 'error': 'No text found in chunks'}), 400
+            
+            # Generate embeddings based on method
+            embeddings = None
+            if method == 'ollama':
+                embeddings = EmbeddingService.get_embeddings_ollama(texts)
+                if embeddings:
+                    logger.info(f"Generated {len(embeddings)} embeddings using Ollama")
+            elif method == 'sentence-transformers':
+                embeddings = EmbeddingService.get_embeddings_sentence_transformers(texts)
+                if embeddings:
+                    logger.info(f"Generated {len(embeddings)} embeddings using sentence-transformers")
+            
+            # Fallback to default if method-specific failed
+            if not embeddings:
+                embeddings = EmbeddingService.get_embeddings(texts)
+            
+            if not embeddings:
+                return jsonify({'success': False, 'error': 'Failed to generate embeddings'}), 500
+            
+            # Return embeddings with chunk info
+            result = []
+            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                result.append({
+                    'chunk_index': i,
+                    'chunk_id': chunk.get('chunk_id', i),
+                    'filename': chunk.get('filename', ''),
+                    'position': chunk.get('position', 0),
+                    'embedding': embedding,
+                    'embedding_dim': len(embedding)
+                })
+            
+            return jsonify({
+                'success': True,
+                'embeddings': result,
+                'total': len(result),
+                'embedding_dim': len(embeddings[0]) if embeddings else 0
+            })
+        except Exception as e:
+            logger.error(f"Error generating embeddings: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+    
+    @app.route('/api/embeddings/evaluate', methods=['POST'])
+    def evaluate_embeddings():
+        """API: Evaluate embeddings using specified metric or all metrics if metric is not provided"""
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({'success': False, 'error': 'No data provided'}), 400
+            
+            embeddings = data.get('embeddings', [])
+            if not embeddings:
+                return jsonify({'success': False, 'error': 'No embeddings provided'}), 400
+            
+            metric = data.get('metric')  # None if not provided
+            n_clusters = data.get('n_clusters', 5)
+            
+            # Extract embedding vectors (list of lists)
+            embedding_vectors = [emb.get('embedding', []) for emb in embeddings if emb.get('embedding')]
+            if not embedding_vectors:
+                return jsonify({'success': False, 'error': 'No valid embeddings found'}), 400
+            
+            # If metric is not specified, evaluate all metrics
+            if metric is None:
+                results = {}
+                
+                # Evaluate Silhouette Score
+                silhouette_result = EmbeddingService.evaluate_silhouette_score(embedding_vectors, n_clusters)
+                if silhouette_result.get('success') and silhouette_result.get('score') is not None:
+                    silhouette_result['quality_level'] = EmbeddingService.get_embedding_quality_level(
+                        'silhouette', silhouette_result['score']
+                    )
+                results['silhouette'] = silhouette_result
+                
+                # Evaluate Davies-Bouldin Index
+                davies_bouldin_result = EmbeddingService.evaluate_davies_bouldin_index(embedding_vectors, n_clusters)
+                if davies_bouldin_result.get('success') and davies_bouldin_result.get('score') is not None:
+                    davies_bouldin_result['quality_level'] = EmbeddingService.get_embedding_quality_level(
+                        'davies_bouldin', davies_bouldin_result['score']
+                    )
+                results['davies_bouldin'] = davies_bouldin_result
+                
+                # Evaluate Calinski-Harabasz Index
+                calinski_harabasz_result = EmbeddingService.evaluate_calinski_harabasz_index(embedding_vectors, n_clusters)
+                if calinski_harabasz_result.get('success') and calinski_harabasz_result.get('score') is not None:
+                    calinski_harabasz_result['quality_level'] = EmbeddingService.get_embedding_quality_level(
+                        'calinski_harabasz', calinski_harabasz_result['score']
+                    )
+                results['calinski_harabasz'] = calinski_harabasz_result
+                
+                # Return success if at least one metric succeeded
+                all_success = any(
+                    r.get('success') and r.get('score') is not None 
+                    for r in results.values()
+                )
+                
+                return jsonify({
+                    'success': all_success,
+                    'results': results
+                })
+            
+            # Evaluate single metric
+            if metric == 'silhouette':
+                result = EmbeddingService.evaluate_silhouette_score(embedding_vectors, n_clusters)
+            elif metric == 'davies_bouldin':
+                result = EmbeddingService.evaluate_davies_bouldin_index(embedding_vectors, n_clusters)
+            elif metric == 'calinski_harabasz':
+                result = EmbeddingService.evaluate_calinski_harabasz_index(embedding_vectors, n_clusters)
+            else:
+                return jsonify({'success': False, 'error': f'Unknown metric: {metric}'}), 400
+            
+            # Add quality_level to single metric result
+            if result.get('success') and result.get('score') is not None:
+                result['quality_level'] = EmbeddingService.get_embedding_quality_level(metric, result['score'])
+            
+            return jsonify({
+                'success': result.get('success', False),
+                'metric': metric,
+                'score': result.get('score'),
+                'n_clusters': result.get('n_clusters'),
+                'description': result.get('description'),
+                'error': result.get('error'),
+                'quality_level': result.get('quality_level')
+            })
+        except Exception as e:
+            logger.error(f"Error evaluating embeddings: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.errorhandler(404)
     def not_found(error):

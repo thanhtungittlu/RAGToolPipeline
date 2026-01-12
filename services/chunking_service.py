@@ -301,104 +301,109 @@ class ChunkingService:
         Returns:
             List of chunks
         """
-        if not text:
-            return []
-        
-        # Split text into sentences
-        sentences = re.split(r'([.!?]\s+)', text)
-        proper_sentences = []
-        for i in range(0, len(sentences) - 1, 2):
-            if i + 1 < len(sentences):
-                proper_sentences.append(sentences[i] + sentences[i + 1])
-            else:
-                proper_sentences.append(sentences[i])
-        
-        # Filter empty sentences
-        proper_sentences = [s.strip() for s in proper_sentences if s.strip()]
-        
-        if len(proper_sentences) <= 1:
-            return [text] if text else []
-        
-        # Get embeddings - prioritize Ollama (default)
-        embeddings = None
-        
-        # If ollama selected (default), try connecting to Ollama server
-        if model.lower() == "ollama" or model.lower() != "sentence-transformers":
-            logger.info(f"Using Ollama at {ollama_url or OLLAMA_BASE_URL}")
-            use_model = ollama_model or OLLAMA_EMBEDDING_MODEL
-            embeddings = ChunkingService._get_embeddings_ollama(
-                proper_sentences, 
-                model=use_model,
-                base_url=ollama_url
-            )
+        try:
+            if not text:
+                return []
             
-            # If ollama fails, fallback to sentence-transformers
-            if embeddings is None and HAS_SENTENCE_TRANSFORMERS:
-                logger.info("Ollama not available, fallback to sentence-transformers")
-                embeddings = ChunkingService._get_embeddings_sentence_transformers(proper_sentences)
-        
-        # If sentence-transformers selected, use sentence-transformers
-        elif model.lower() == "sentence-transformers":
-            if HAS_SENTENCE_TRANSFORMERS:
-                logger.info("Using sentence-transformers for semantic chunking")
-                embeddings = ChunkingService._get_embeddings_sentence_transformers(proper_sentences)
-            else:
-                logger.warning("Sentence-transformers not available, fallback to simple semantic chunking")
-                return ChunkingService._semantic_chunk_simple(text, chunk_size)
-        
-        # If still no embeddings, fallback to simple version
-        if embeddings is None or len(embeddings) != len(proper_sentences):
-            logger.info("No embeddings available, using simple semantic chunking")
-            return ChunkingService._semantic_chunk_simple(text, chunk_size)
-        
-        # Calculate similarity between consecutive sentences
-        similarities = []
-        for i in range(len(embeddings) - 1):
-            sim = ChunkingService._cosine_similarity(embeddings[i], embeddings[i + 1])
-            similarities.append(sim)
-        
-        # Split chunks based on similarity and size
-        chunks = []
-        current_chunk = []
-        current_length = 0
-        
-        for i, sentence in enumerate(proper_sentences):
-            sentence_len = len(sentence)
+            # Split text into sentences
+            sentences = re.split(r'([.!?]\s+)', text)
+            proper_sentences = []
+            for i in range(0, len(sentences) - 1, 2):
+                if i + 1 < len(sentences):
+                    proper_sentences.append(sentences[i] + sentences[i + 1])
+                else:
+                    proper_sentences.append(sentences[i])
             
-            # If current sentence too long, split chunk
-            if current_length + sentence_len > chunk_size * 1.5 and current_chunk:
-                chunks.append(' '.join(current_chunk))
-                current_chunk = [sentence]
-                current_length = sentence_len
-                continue
+            # Filter empty sentences
+            proper_sentences = [s.strip() for s in proper_sentences if s.strip()]
             
-            # Check similarity with previous sentence
-            if i > 0:
-                similarity = similarities[i - 1]
+            if len(proper_sentences) <= 1:
+                return [text] if text else []
+            
+            # Get embeddings - prioritize Ollama (default)
+            embeddings = None
+            
+            # If ollama selected (default), try connecting to Ollama server
+            if model.lower() == "ollama" or model.lower() != "sentence-transformers":
+                logger.info(f"Using Ollama at {ollama_url or OLLAMA_BASE_URL}")
+                use_model = ollama_model or OLLAMA_EMBEDDING_MODEL
+                embeddings = ChunkingService._get_embeddings_ollama(
+                    proper_sentences, 
+                    model=use_model,
+                    base_url=ollama_url
+                )
                 
-                # If similarity low (< 0.5), could be a good split point
-                # But only split if reached minimum size
-                if similarity < 0.5 and current_length >= chunk_size * 0.5 and current_chunk:
+                # If ollama fails, fallback to sentence-transformers
+                if embeddings is None and HAS_SENTENCE_TRANSFORMERS:
+                    logger.info("Ollama not available, fallback to sentence-transformers")
+                    embeddings = ChunkingService._get_embeddings_sentence_transformers(proper_sentences)
+            
+            # If sentence-transformers selected, use sentence-transformers
+            elif model.lower() == "sentence-transformers":
+                if HAS_SENTENCE_TRANSFORMERS:
+                    logger.info("Using sentence-transformers for semantic chunking")
+                    embeddings = ChunkingService._get_embeddings_sentence_transformers(proper_sentences)
+                else:
+                    logger.warning("Sentence-transformers not available, fallback to simple semantic chunking")
+                    return ChunkingService._semantic_chunk_simple(text, chunk_size)
+            
+            # If still no embeddings, fallback to simple version
+            if embeddings is None or len(embeddings) != len(proper_sentences):
+                logger.info("No embeddings available, using simple semantic chunking")
+                return ChunkingService._semantic_chunk_simple(text, chunk_size)
+            
+            # Calculate similarity between consecutive sentences
+            similarities = []
+            for i in range(len(embeddings) - 1):
+                sim = ChunkingService._cosine_similarity(embeddings[i], embeddings[i + 1])
+                similarities.append(sim)
+            
+            # Split chunks based on similarity and size
+            chunks = []
+            current_chunk = []
+            current_length = 0
+            
+            for i, sentence in enumerate(proper_sentences):
+                sentence_len = len(sentence)
+                
+                # If current sentence too long, split chunk
+                if current_length + sentence_len > chunk_size * 1.5 and current_chunk:
                     chunks.append(' '.join(current_chunk))
                     current_chunk = [sentence]
                     current_length = sentence_len
                     continue
+                
+                # Check similarity with previous sentence
+                if i > 0:
+                    similarity = similarities[i - 1]
+                    
+                    # If similarity low (< 0.5), could be a good split point
+                    # But only split if reached minimum size
+                    if similarity < 0.5 and current_length >= chunk_size * 0.5 and current_chunk:
+                        chunks.append(' '.join(current_chunk))
+                        current_chunk = [sentence]
+                        current_length = sentence_len
+                        continue
+                
+                # Add sentence to current chunk
+                current_chunk.append(sentence)
+                current_length += sentence_len + 1  # +1 for space
+                
+                # If reached size, split chunk
+                if current_length >= chunk_size:
+                    chunks.append(' '.join(current_chunk))
+                    current_chunk = []
+                    current_length = 0
             
-            # Add sentence to current chunk
-            current_chunk.append(sentence)
-            current_length += sentence_len + 1  # +1 for space
-            
-            # If reached size, split chunk
-            if current_length >= chunk_size:
+            # Add last chunk
+            if current_chunk:
                 chunks.append(' '.join(current_chunk))
-                current_chunk = []
-                current_length = 0
-        
-        # Add last chunk
-        if current_chunk:
-            chunks.append(' '.join(current_chunk))
-        
-        return chunks if chunks else [text]
+            
+            return chunks if chunks else [text]
+        except Exception as e:
+            logger.error(f"Error in semantic_chunk, falling back to simple chunking: {e}")
+            # Fallback to simple semantic chunking on any error
+            return ChunkingService._semantic_chunk_simple(text, chunk_size)
     
     @staticmethod
     def _semantic_chunk_simple(text: str, chunk_size: int = 500) -> List[str]:
@@ -492,11 +497,16 @@ class ChunkingService:
             model = params.get('model', 'ollama')  # Default use Ollama
             ollama_url = params.get('ollama_url', None)
             ollama_model = params.get('ollama_model', None)
-            chunks_text = ChunkingService.semantic_chunk(
-                content, chunk_size, model, 
-                ollama_url=ollama_url,
-                ollama_model=ollama_model
-            )
+            try:
+                chunks_text = ChunkingService.semantic_chunk(
+                    content, chunk_size, model, 
+                    ollama_url=ollama_url,
+                    ollama_model=ollama_model
+                )
+            except Exception as e:
+                logger.error(f"Error in semantic chunking, falling back to simple chunking: {e}")
+                # Fallback to simple semantic chunking
+                chunks_text = ChunkingService._semantic_chunk_simple(content, chunk_size)
         
         else:
             logger.error(f"Unknown strategy: {strategy}")
