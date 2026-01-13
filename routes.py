@@ -10,6 +10,12 @@ from config import DATA_DIR, ALLOWED_EXTENSIONS
 from services.document_service import DocumentService
 from services.chunking_service import ChunkingService
 from services.embedding_service import EmbeddingService
+from services.retrieval_service import RetrievalService
+from services.ragas_service import RAGASService
+from services.visualization_service import VisualizationService
+from services.retrieval_service import RetrievalService
+from services.ragas_service import RAGASService
+from services.visualization_service import VisualizationService
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +189,6 @@ def register_routes(app: Flask):
                                  {'value': 'ollama', 'label': 'Ollama (default - localhost:11434)'},
                                  {'value': 'sentence-transformers', 'label': 'Sentence Transformers (fallback)'}
                              ]},
-                    'ollama_url': {'type': 'text', 'default': 'http://localhost:11434', 'label': 'Ollama Server URL'},
                     'ollama_model': {'type': 'text', 'default': 'nomic-embed-text', 'label': 'Ollama Model Name (default: nomic-embed-text)'}
                 }
             }
@@ -231,6 +236,33 @@ def register_routes(app: Flask):
             })
         except Exception as e:
             logger.error(f"Error running chunking: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+    
+    @app.route('/api/chunking/evaluate', methods=['POST'])
+    def evaluate_chunking():
+        """API: Evaluate chunking quality (Boundary score, Completeness, Coherence)"""
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({'success': False, 'error': 'No data provided'}), 400
+            
+            chunks = data.get('chunks', [])
+            if not chunks:
+                return jsonify({'success': False, 'error': 'No chunks provided'}), 400
+            
+            # Evaluate Boundary Quality (only metric displayed)
+            boundary_result = ChunkingService.evaluate_boundary_score_fast(chunks)
+            if boundary_result.get('success') and boundary_result.get('score') is not None:
+                boundary_result['quality_level'] = 'PASS' if boundary_result['score'] >= 0.8 else 'FAIL'
+            
+            return jsonify({
+                'success': boundary_result.get('success', False),
+                'results': {
+                    'boundary': boundary_result
+                }
+            })
+        except Exception as e:
+            logger.error(f"Error evaluating chunking: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/chunks', methods=['GET'])
@@ -305,7 +337,13 @@ def register_routes(app: Flask):
     
     @app.route('/api/embeddings/evaluate', methods=['POST'])
     def evaluate_embeddings():
-        """API: Evaluate embeddings using specified metric or all metrics if metric is not provided"""
+        """
+        API: Evaluate embeddings using specified metric or comprehensive evaluation
+        
+        Supports:
+        - Single metric: 'silhouette', 'davies_bouldin'
+        - Comprehensive evaluation: metric=None or 'comprehensive'
+        """
         try:
             data = request.get_json()
             if not data:
@@ -315,16 +353,40 @@ def register_routes(app: Flask):
             if not embeddings:
                 return jsonify({'success': False, 'error': 'No embeddings provided'}), 400
             
-            metric = data.get('metric')  # None if not provided
-            n_clusters = data.get('n_clusters', 5)
+            # Extract embedding vectors (handle both formats)
+            embedding_vectors = []
+            for emb in embeddings:
+                if isinstance(emb, list):
+                    embedding_vectors.append(emb)
+                elif isinstance(emb, dict) and 'embedding' in emb:
+                    embedding_vectors.append(emb['embedding'])
+                else:
+                    return jsonify({'success': False, 'error': 'Invalid embedding format'}), 400
             
-            # Extract embedding vectors (list of lists)
-            embedding_vectors = [emb.get('embedding', []) for emb in embeddings if emb.get('embedding')]
-            if not embedding_vectors:
-                return jsonify({'success': False, 'error': 'No valid embeddings found'}), 400
+            if len(embedding_vectors) < 2:
+                return jsonify({'success': False, 'error': 'Need at least 2 embeddings for evaluation'}), 400
             
-            # If metric is not specified, evaluate all metrics
-            if metric is None:
+            metric = data.get('metric')  # None, 'comprehensive', or specific metric name
+            n_clusters = data.get('n_clusters', 10)  # Default to 10 for comprehensive evaluation
+            
+            # Comprehensive evaluation (recommended approach from guide)
+            if metric is None or metric == 'comprehensive':
+                comprehensive_result = EmbeddingService.comprehensive_embedding_evaluation(embedding_vectors, n_clusters)
+                
+                if comprehensive_result.get('success'):
+                    return jsonify({
+                        'success': True,
+                        'method': 'comprehensive',
+                        'results': comprehensive_result.get('results')
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': comprehensive_result.get('error', 'Comprehensive evaluation failed')
+                    }), 500
+            
+            # If metric is not specified, evaluate all basic metrics (legacy mode)
+            if metric == 'all':
                 results = {}
                 
                 # Evaluate Silhouette Score
@@ -343,14 +405,6 @@ def register_routes(app: Flask):
                     )
                 results['davies_bouldin'] = davies_bouldin_result
                 
-                # Evaluate Calinski-Harabasz Index
-                calinski_harabasz_result = EmbeddingService.evaluate_calinski_harabasz_index(embedding_vectors, n_clusters)
-                if calinski_harabasz_result.get('success') and calinski_harabasz_result.get('score') is not None:
-                    calinski_harabasz_result['quality_level'] = EmbeddingService.get_embedding_quality_level(
-                        'calinski_harabasz', calinski_harabasz_result['score']
-                    )
-                results['calinski_harabasz'] = calinski_harabasz_result
-                
                 # Return success if at least one metric succeeded
                 all_success = any(
                     r.get('success') and r.get('score') is not None 
@@ -367,10 +421,11 @@ def register_routes(app: Flask):
                 result = EmbeddingService.evaluate_silhouette_score(embedding_vectors, n_clusters)
             elif metric == 'davies_bouldin':
                 result = EmbeddingService.evaluate_davies_bouldin_index(embedding_vectors, n_clusters)
-            elif metric == 'calinski_harabasz':
-                result = EmbeddingService.evaluate_calinski_harabasz_index(embedding_vectors, n_clusters)
+            elif metric == 'intra_cluster_distance':
+                method = data.get('intra_method', 'centroid')
+                result = EmbeddingService.evaluate_intra_cluster_distance(embedding_vectors, n_clusters, method)
             else:
-                return jsonify({'success': False, 'error': f'Unknown metric: {metric}'}), 400
+                return jsonify({'success': False, 'error': f'Unknown metric: {metric}. Supported: silhouette, davies_bouldin, intra_cluster_distance, comprehensive'}), 400
             
             # Add quality_level to single metric result
             if result.get('success') and result.get('score') is not None:
@@ -387,6 +442,170 @@ def register_routes(app: Flask):
             })
         except Exception as e:
             logger.error(f"Error evaluating embeddings: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+    
+    @app.route('/api/retrieval/evaluate', methods=['POST'])
+    def evaluate_retrieval():
+        """
+        API: Evaluate retrieval quality (Layer 3)
+        
+        Supports single query or multiple queries evaluation
+        """
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({'success': False, 'error': 'No data provided'}), 400
+            
+            # Check if single query or multiple queries
+            if 'query_embedding' in data:
+                # Single query evaluation
+                query_embedding = data.get('query_embedding')
+                document_embeddings = data.get('document_embeddings', [])
+                relevant_doc_indices = data.get('relevant_doc_indices', [])
+                k_values = data.get('k_values', [5, 10])
+                relevance_scores = data.get('relevance_scores')  # Optional
+                
+                if not query_embedding or not document_embeddings:
+                    return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+                
+                if isinstance(relevant_doc_indices, list):
+                    relevant_doc_indices = set(relevant_doc_indices)
+                
+                result = RetrievalService.evaluate_retrieval_quality(
+                    query_embedding,
+                    document_embeddings,
+                    relevant_doc_indices,
+                    k_values,
+                    relevance_scores
+                )
+                
+                return jsonify(result)
+            
+            elif 'test_queries' in data:
+                # Multiple queries evaluation
+                test_queries = data.get('test_queries', [])
+                document_embeddings = data.get('document_embeddings', [])
+                k_values = data.get('k_values', [5, 10])
+                
+                if not test_queries or not document_embeddings:
+                    return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+                
+                result = RetrievalService.evaluate_multiple_queries(
+                    test_queries,
+                    document_embeddings,
+                    k_values
+                )
+                
+                return jsonify(result)
+            else:
+                return jsonify({'success': False, 'error': 'Must provide either query_embedding or test_queries'}), 400
+                
+        except Exception as e:
+            logger.error(f"Error evaluating retrieval: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+    
+    @app.route('/api/ragas/evaluate', methods=['POST'])
+    def evaluate_ragas():
+        """
+        API: Evaluate RAG quality using RAGAS framework
+        """
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({'success': False, 'error': 'No data provided'}), 400
+            
+            question = data.get('question')
+            answer = data.get('answer')
+            contexts = data.get('contexts', [])
+            relevant_contexts = data.get('relevant_contexts')  # Optional
+            answer_embedding = data.get('answer_embedding')  # Optional
+            question_embedding = data.get('question_embedding')  # Optional
+            
+            if not question or not answer or not contexts:
+                return jsonify({'success': False, 'error': 'Missing required fields: question, answer, contexts'}), 400
+            
+            # Check if single metric or comprehensive
+            metric = data.get('metric')
+            
+            if metric and metric != 'comprehensive':
+                # Single metric evaluation
+                if metric == 'faithfulness':
+                    result = RAGASService.evaluate_faithfulness(answer, contexts)
+                elif metric == 'answer_relevancy':
+                    result = RAGASService.evaluate_answer_relevancy(
+                        question, answer, answer_embedding, question_embedding
+                    )
+                elif metric == 'context_precision':
+                    if not relevant_contexts:
+                        return jsonify({'success': False, 'error': 'relevant_contexts required for context_precision'}), 400
+                    result = RAGASService.evaluate_context_precision(contexts, relevant_contexts)
+                elif metric == 'context_recall':
+                    if not relevant_contexts:
+                        return jsonify({'success': False, 'error': 'relevant_contexts required for context_recall'}), 400
+                    result = RAGASService.evaluate_context_recall(contexts, relevant_contexts)
+                else:
+                    return jsonify({'success': False, 'error': f'Unknown metric: {metric}'}), 400
+                
+                return jsonify(result)
+            else:
+                # Comprehensive evaluation
+                result = RAGASService.comprehensive_ragas_evaluation(
+                    question,
+                    answer,
+                    contexts,
+                    relevant_contexts,
+                    answer_embedding,
+                    question_embedding
+                )
+                
+                return jsonify(result)
+                
+        except Exception as e:
+            logger.error(f"Error evaluating RAGAS: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+    
+    @app.route('/api/visualization/reduce', methods=['POST'])
+    def reduce_dimensions():
+        """
+        API: Reduce embedding dimensions for visualization (UMAP or t-SNE)
+        """
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({'success': False, 'error': 'No data provided'}), 400
+            
+            embeddings = data.get('embeddings', [])
+            if not embeddings:
+                return jsonify({'success': False, 'error': 'No embeddings provided'}), 400
+            
+            # Extract embedding vectors
+            embedding_vectors = []
+            for emb in embeddings:
+                if isinstance(emb, list):
+                    embedding_vectors.append(emb)
+                elif isinstance(emb, dict) and 'embedding' in emb:
+                    embedding_vectors.append(emb['embedding'])
+                else:
+                    return jsonify({'success': False, 'error': 'Invalid embedding format'}), 400
+            
+            method = data.get('method', 'umap').lower()  # Always 'umap' now
+            n_components = data.get('n_components', 2)  # 2 or 3
+            labels = data.get('labels')  # Optional
+            chunks = data.get('chunks')  # Optional
+            
+            # Prepare visualization data
+            result = VisualizationService.prepare_visualization_data(
+                embedding_vectors,
+                labels,
+                chunks,
+                method,
+                n_components=n_components
+            )
+            
+            return jsonify(result)
+                
+        except Exception as e:
+            logger.error(f"Error reducing dimensions: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.errorhandler(404)

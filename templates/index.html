@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RAG Tool - Document & Chunking Pipeline</title>
+    <!-- Plotly.js for 3D visualization -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -612,6 +614,29 @@
                         <div id="chunks-container"></div>
                         
                         <div class="pagination" id="pagination"></div>
+                        
+                        <!-- Chunking Quality Evaluation -->
+                        <div id="chunking-evaluation-section" style="margin-top: 40px; display: none;">
+                            <h3 style="margin-top: 30px; margin-bottom: 15px;">Chunking Quality Evaluation</h3>
+                            <p style="margin-bottom: 20px; color: #666;">Evaluation metrics are calculated automatically after chunking:</p>
+                            
+                            <div id="chunking-evaluation-results" style="margin: 20px 0;">
+                                <!-- Results will be displayed here as table -->
+                            </div>
+                            
+                            <!-- Notes about other metrics -->
+                            <div style="margin-top: 30px; padding: 15px; background: #f9f9f9; border-radius: 6px; border-left: 4px solid #667eea;">
+                                <h4 style="margin-top: 0; margin-bottom: 10px; color: #333;">Các chỉ số đánh giá khác:</h4>
+                                <ul style="margin: 0; padding-left: 20px; color: #666;">
+                                    <li style="margin-bottom: 8px;">
+                                        <strong>Completeness:</strong> Đo lường mức độ đầy đủ thông tin của chunks. Chỉ số này đánh giá xem chunks có chứa đủ thông tin cần thiết hay không dựa trên độ dài trung bình và coverage so với văn bản gốc. Target: ≥0.7
+                                    </li>
+                                    <li style="margin-bottom: 8px;">
+                                        <strong>Coherence:</strong> Đo lường tính mạch lạc ngữ nghĩa của từng chunk. Chỉ số này đánh giá mức độ liên kết và nhất quán về mặt ngữ nghĩa giữa các câu trong cùng một chunk. Target: ≥0.7
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -658,7 +683,7 @@
                         
                         <div class="section">
                             <h3>Embedding Quality Evaluation</h3>
-                            <p>All three metrics are evaluated automatically after embedding generation:</p>
+                            <p>Evaluation metrics are calculated automatically after embedding generation:</p>
                             
                             <div style="margin: 20px 0;">
                                 <label for="n-clusters" style="display: block; margin-bottom: 8px; font-weight: bold;">
@@ -680,36 +705,132 @@
                 </div>
             </div>
             
-            <!-- Step 4: UMAP (Placeholder) -->
+            <!-- Step 4: UMAP Visualization -->
             <div class="step" id="step4">
                 <div class="step-header">
                     <div class="step-number">4</div>
                     <div class="step-title">UMAP Visualization</div>
                 </div>
                 <div class="step-content">
-                    <div class="placeholder">Coming soon...</div>
+                    <div id="step4-alerts"></div>
+                    
+                    <div class="section">
+                        <p style="margin-bottom: 15px; color: #666;">
+                            Trực quan hóa embeddings bằng UMAP. Hover vào các điểm để xem thông tin chi tiết về chunk.
+                        </p>
+                        
+                        <div class="form-group">
+                            <label>View Mode</label>
+                            <select id="viz-dimensions" style="width: 200px;">
+                                <option value="2" selected>2D</option>
+                                <option value="3">3D</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group" id="viz-filter-group" style="display: none; margin-top: 15px;">
+                            <label>Filter by Document</label>
+                            <select id="viz-filter-doc" style="width: 100%; max-width: 400px;">
+                                <option value="all">Tất cả tài liệu</option>
+                            </select>
+                        </div>
+                        
+                        <button onclick="generateVisualization()" id="generate-viz-btn" 
+                                style="margin-top: 15px; padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                            Generate Visualization
+                        </button>
+                        
+                        <div id="visualization-results" style="margin-top: 30px;"></div>
+                    </div>
                 </div>
             </div>
             
-            <!-- Step 5: Retrieval Test (Placeholder) -->
+            <!-- Step 5: Retrieval Test -->
             <div class="step" id="step5">
                 <div class="step-header">
                     <div class="step-number">5</div>
                     <div class="step-title">Retrieval Test</div>
                 </div>
                 <div class="step-content">
-                    <div class="placeholder">Coming soon...</div>
+                    <div id="step5-alerts"></div>
+                    
+                    <div class="section">
+                        <p style="margin-bottom: 15px; color: #666;">
+                            Test retrieval quality by querying the embeddings. You need to provide query embedding and relevant document indices.
+                        </p>
+                        
+                        <div class="form-group">
+                            <label>Query Text</label>
+                            <textarea id="retrieval-query" placeholder="Enter your query here..." 
+                                     style="width: 100%; min-height: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Relevant Document Indices (comma-separated, e.g., 0,1,3)</label>
+                            <input type="text" id="relevant-indices" placeholder="0,1,3" 
+                                   style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>K Values (comma-separated, e.g., 5,10)</label>
+                            <input type="text" id="k-values" value="5,10" 
+                                   style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        
+                        <button onclick="testRetrieval()" id="test-retrieval-btn" 
+                                style="margin-top: 15px; padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                            Test Retrieval
+                        </button>
+                        
+                        <div id="retrieval-results" style="margin-top: 30px;"></div>
+                    </div>
                 </div>
             </div>
             
-            <!-- Step 6: RAGAS Evaluation (Placeholder) -->
+            <!-- Step 6: RAGAS Evaluation -->
             <div class="step" id="step6">
                 <div class="step-header">
                     <div class="step-number">6</div>
                     <div class="step-title">RAGAS Evaluation</div>
                 </div>
                 <div class="step-content">
-                    <div class="placeholder">Coming soon...</div>
+                    <div id="step6-alerts"></div>
+                    
+                    <div class="section">
+                        <p style="margin-bottom: 15px; color: #666;">
+                            Evaluate RAG quality using RAGAS framework metrics: Faithfulness, Answer Relevancy, Context Precision, and Context Recall.
+                        </p>
+                        
+                        <div class="form-group">
+                            <label>Question</label>
+                            <textarea id="ragas-question" placeholder="Enter your question..." 
+                                     style="width: 100%; min-height: 60px; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Answer</label>
+                            <textarea id="ragas-answer" placeholder="Enter the answer generated by your RAG system..." 
+                                     style="width: 100%; min-height: 100px; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Contexts (one per line or JSON array)</label>
+                            <textarea id="ragas-contexts" placeholder='Enter contexts, one per line or as JSON array: ["context1", "context2"]' 
+                                     style="width: 100%; min-height: 120px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace;"></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Relevant Contexts (optional, comma-separated indices, e.g., 0,1)</label>
+                            <input type="text" id="ragas-relevant-contexts" placeholder="0,1" 
+                                   style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        
+                        <button onclick="evaluateRAGAS()" id="evaluate-ragas-btn" 
+                                style="margin-top: 15px; padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                            Evaluate RAGAS
+                        </button>
+                        
+                        <div id="ragas-results" style="margin-top: 30px;"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -781,6 +902,9 @@
                     let html = '<label>Parameters</label>';
                     
                     for (const [key, param] of Object.entries(strategy.params)) {
+                        // Skip ollama_url - always use default from config
+                        if (key === 'ollama_url') continue;
+                        
                         if (param.type === 'select' && param.options) {
                             // Render select dropdown
                             html += `
@@ -1153,6 +1277,9 @@
                     
                     // Update generate embeddings button
                     updateGenerateEmbeddingsButton();
+                    
+                    // Automatically evaluate chunking quality
+                    await evaluateChunkingQuality();
                 } else {
                     showAlert('step2-alerts', data.error || 'Chunking failed', 'error');
                 }
@@ -1298,6 +1425,103 @@
             }
         }
         
+        // Evaluate chunking quality
+        async function evaluateChunkingQuality() {
+            if (allChunks.length === 0) {
+                console.warn('No chunks to evaluate');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/chunking/evaluate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        chunks: allChunks
+                    })
+                });
+                
+                const data = await response.json();
+                console.log('Chunking evaluation response:', data);
+                
+                if (data.results) {
+                    displayChunkingEvaluationResults(data.results);
+                } else {
+                    console.warn('No evaluation results returned');
+                }
+            } catch (error) {
+                console.error('Error evaluating chunking quality:', error);
+            }
+        }
+        
+        // Display chunking evaluation results
+        function displayChunkingEvaluationResults(results) {
+            const resultsDiv = document.getElementById('chunking-evaluation-results');
+            const sectionDiv = document.getElementById('chunking-evaluation-section');
+            
+            if (!resultsDiv || !sectionDiv) {
+                console.error('Chunking evaluation elements not found');
+                return;
+            }
+            
+            // Only display Boundary Quality
+            let tableRows = '';
+            
+            // Boundary Quality
+            if (results.boundary && results.boundary.score !== undefined) {
+                const result = results.boundary;
+                const qualityLevel = result.quality_level || 'UNKNOWN';
+                const qualityColor = qualityLevel === 'PASS' ? '#4CAF50' : '#F44336';
+                const goodEndings = result.good_endings || 0;
+                const totalChunks = result.total_chunks || 0;
+                
+                tableRows += `
+                    <tr>
+                        <td><strong>Boundary Quality</strong></td>
+                        <td style="font-size: 18px; font-weight: bold; color: ${qualityColor}; text-align: center;">
+                            ${result.score.toFixed(4)}
+                        </td>
+                        <td style="text-align: center;">
+                            <span style="padding: 5px 12px; background: ${qualityColor}20; border-radius: 4px; font-weight: bold; color: ${qualityColor};">
+                                ${qualityLevel}
+                            </span>
+                        </td>
+                        <td style="font-size: 0.85em; color: #555;">
+                            Đo lường phần trăm chunks kết thúc bằng dấu câu đúng (. ! ?). Chỉ số cao (≥0.8) nghĩa là ranh giới chunks tốt hơn. (${goodEndings}/${totalChunks} chunks có kết thúc đúng)
+                        </td>
+                    </tr>
+                `;
+            } else {
+                tableRows += `
+                    <tr>
+                        <td><strong>Boundary Quality</strong></td>
+                        <td colspan="3" style="color: #999; font-style: italic; text-align: center;">Evaluation failed</td>
+                    </tr>
+                `;
+            }
+            
+            const html = `
+                <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <thead>
+                        <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                            <th style="padding: 15px; text-align: left; font-weight: 600;">Metric</th>
+                            <th style="padding: 15px; text-align: center; font-weight: 600;">Score</th>
+                            <th style="padding: 15px; text-align: center; font-weight: 600;">Status</th>
+                            <th style="padding: 15px; text-align: left; font-weight: 600;">Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRows}
+                    </tbody>
+                </table>
+            `;
+            
+            resultsDiv.innerHTML = html;
+            sectionDiv.style.display = 'block';
+        }
+        
         // Generate embeddings
         async function generateEmbeddings() {
             if (allChunks.length === 0) {
@@ -1408,8 +1632,8 @@
                     },
                     body: JSON.stringify({
                         embeddings: allEmbeddings,
-                        n_clusters: maxClusters
-                        // metric is None, so all metrics will be evaluated
+                        n_clusters: maxClusters,
+                        metric: null  // Use comprehensive evaluation (default)
                     })
                 });
                 
@@ -1419,7 +1643,12 @@
                 // Display results if available, even if success is false
                 // (some metrics may have failed but others succeeded)
                 if (data.results) {
-                    displayEvaluationResults(data.results);
+                    // Check if comprehensive evaluation results
+                    if (data.method === 'comprehensive' && data.results.silhouette_score) {
+                        displayComprehensiveEvaluationResults(data.results);
+                    } else {
+                        displayEvaluationResults(data.results);
+                    }
                     // Only show error if all metrics failed
                     if (!data.success) {
                         const hasAnySuccess = Object.values(data.results).some(
@@ -1455,28 +1684,28 @@
             }
             
             const metricNames = {
-                'silhouette': 'Silhouette Score',
-                'davies_bouldin': 'Davies-Bouldin Index',
-                'calinski_harabasz': 'Calinski-Harabasz Index'
+                'silhouette_score': 'Silhouette Score',
+                'calinski_harabasz_score': 'Calinski-Harabasz Index',
+                'davies_bouldin': 'Davies-Bouldin Index'
             };
             
             const metricDescriptions = {
-                'silhouette': 'Range: -1 to 1. Higher is better. Measures how similar an object is to its own cluster compared to other clusters.',
-                'davies_bouldin': 'Lower is better. Measures the average similarity ratio of clusters.',
-                'calinski_harabasz': 'Higher is better. Ratio of between-cluster variance to within-cluster variance.'
+                'silhouette_score': 'Giá trị từ -1 đến 1. Giá trị cao hơn là tốt hơn. Đo lường mức độ tương tự của một điểm với cluster của nó so với các cluster khác.',
+                'calinski_harabasz_score': 'Giá trị cao hơn là tốt hơn. Tỷ lệ giữa độ phân tán between-cluster và within-cluster.',
+                'davies_bouldin': 'Giá trị thấp hơn là tốt hơn. Đo lường tỷ lệ tương tự trung bình giữa các cluster.'
             };
             
-            // Build table rows
+            // Build table rows - Show all 3 metrics
             let tableRows = '';
             
             // Silhouette Score
-            if (results.silhouette && results.silhouette.score !== undefined) {
-                const result = results.silhouette;
+            if (results.silhouette_score && results.silhouette_score.score !== undefined) {
+                const result = results.silhouette_score;
                 const qualityLevel = result.quality_level || 'UNKNOWN';
                 const qualityColor = getQualityColor(qualityLevel);
                 tableRows += `
                     <tr>
-                        <td><strong>${metricNames.silhouette}</strong></td>
+                        <td><strong>${metricNames.silhouette_score}</strong></td>
                         <td style="font-size: 18px; font-weight: bold; color: ${qualityColor}; text-align: center;">
                             ${result.score.toFixed(4)}
                         </td>
@@ -1486,87 +1715,111 @@
                             </span>
                         </td>
                         <td style="text-align: center; color: #666;">
-                            ${result.n_clusters || 'N/A'}
+                            ${results.n_clusters || 'N/A'}
                         </td>
                         <td style="font-size: 0.85em; color: #555;">
-                            ${metricDescriptions.silhouette}
+                            ${result.description || metricDescriptions.silhouette_score}
                         </td>
                     </tr>
                 `;
             } else {
                 tableRows += `
                     <tr>
-                        <td><strong>${metricNames.silhouette}</strong></td>
-                        <td colspan="4" style="color: #999; font-style: italic; text-align: center;">Evaluation failed</td>
-                    </tr>
-                `;
-            }
-            
-            // Davies-Bouldin Index
-            if (results.davies_bouldin && results.davies_bouldin.score !== undefined) {
-                const result = results.davies_bouldin;
-                const qualityLevel = result.quality_level || 'UNKNOWN';
-                const qualityColor = getQualityColor(qualityLevel);
-                tableRows += `
-                    <tr>
-                        <td><strong>${metricNames.davies_bouldin}</strong></td>
-                        <td style="font-size: 18px; font-weight: bold; color: ${qualityColor}; text-align: center;">
-                            ${result.score.toFixed(4)}
-                        </td>
-                        <td style="text-align: center;">
-                            <span style="padding: 5px 12px; background: ${qualityColor}20; border-radius: 4px; font-weight: bold; color: ${qualityColor};">
-                                ${qualityLevel}
-                            </span>
-                        </td>
-                        <td style="text-align: center; color: #666;">
-                            ${result.n_clusters || 'N/A'}
-                        </td>
-                        <td style="font-size: 0.85em; color: #555;">
-                            ${metricDescriptions.davies_bouldin}
-                        </td>
-                    </tr>
-                `;
-            } else {
-                tableRows += `
-                    <tr>
-                        <td><strong>${metricNames.davies_bouldin}</strong></td>
-                        <td colspan="4" style="color: #999; font-style: italic; text-align: center;">Evaluation failed</td>
+                        <td><strong>${metricNames.silhouette_score}</strong></td>
+                        <td colspan="4" style="color: #999; font-style: italic; text-align: center;">Đánh giá thất bại</td>
                     </tr>
                 `;
             }
             
             // Calinski-Harabasz Index
-            if (results.calinski_harabasz && results.calinski_harabasz.score !== undefined) {
-                const result = results.calinski_harabasz;
-                const qualityLevel = result.quality_level || 'UNKNOWN';
-                const qualityColor = getQualityColor(qualityLevel);
-                tableRows += `
-                    <tr>
-                        <td><strong>${metricNames.calinski_harabasz}</strong></td>
-                        <td style="font-size: 18px; font-weight: bold; color: ${qualityColor}; text-align: center;">
-                            ${result.score.toFixed(4)}
-                        </td>
-                        <td style="text-align: center;">
-                            <span style="padding: 5px 12px; background: ${qualityColor}20; border-radius: 4px; font-weight: bold; color: ${qualityColor};">
-                                ${qualityLevel}
-                            </span>
-                        </td>
-                        <td style="text-align: center; color: #666;">
-                            ${result.n_clusters || 'N/A'}
-                        </td>
-                        <td style="font-size: 0.85em; color: #555;">
-                            ${metricDescriptions.calinski_harabasz}
-                        </td>
-                    </tr>
-                `;
+            if (results.calinski_harabasz_score) {
+                const result = results.calinski_harabasz_score;
+                if (result.score !== null && result.score !== undefined) {
+                    const qualityLevel = result.quality_level || 'UNKNOWN';
+                    const qualityColor = getQualityColor(qualityLevel);
+                    tableRows += `
+                        <tr>
+                            <td><strong>${metricNames.calinski_harabasz_score}</strong></td>
+                            <td style="font-size: 18px; font-weight: bold; color: ${qualityColor}; text-align: center;">
+                                ${result.score.toFixed(4)}
+                            </td>
+                            <td style="text-align: center;">
+                                <span style="padding: 5px 12px; background: ${qualityColor}20; border-radius: 4px; font-weight: bold; color: ${qualityColor};">
+                                    ${qualityLevel}
+                                </span>
+                            </td>
+                            <td style="text-align: center; color: #666;">
+                                ${results.n_clusters || 'N/A'}
+                            </td>
+                            <td style="font-size: 0.85em; color: #555;">
+                                ${result.description || metricDescriptions.calinski_harabasz_score}
+                            </td>
+                        </tr>
+                    `;
+                } else {
+                    // Show error message
+                    tableRows += `
+                        <tr>
+                            <td><strong>${metricNames.calinski_harabasz_score}</strong></td>
+                            <td colspan="4" style="color: #FF9800; font-style: italic; text-align: center;">
+                                ${result.error || 'Không thể tính toán'} (Cần số clusters < số samples)
+                            </td>
+                        </tr>
+                    `;
+                }
             } else {
                 tableRows += `
                     <tr>
-                        <td><strong>${metricNames.calinski_harabasz}</strong></td>
-                        <td colspan="4" style="color: #999; font-style: italic; text-align: center;">Evaluation failed</td>
+                        <td><strong>${metricNames.calinski_harabasz_score}</strong></td>
+                        <td colspan="4" style="color: #999; font-style: italic; text-align: center;">Đánh giá thất bại</td>
                     </tr>
                 `;
             }
+            
+            // Davies-Bouldin Index
+            if (results.davies_bouldin) {
+                const result = results.davies_bouldin;
+                if (result.score !== null && result.score !== undefined) {
+                    const qualityLevel = result.quality_level || 'UNKNOWN';
+                    const qualityColor = getQualityColor(qualityLevel);
+                    tableRows += `
+                        <tr>
+                            <td><strong>${metricNames.davies_bouldin}</strong></td>
+                            <td style="font-size: 18px; font-weight: bold; color: ${qualityColor}; text-align: center;">
+                                ${result.score.toFixed(4)}
+                            </td>
+                            <td style="text-align: center;">
+                                <span style="padding: 5px 12px; background: ${qualityColor}20; border-radius: 4px; font-weight: bold; color: ${qualityColor};">
+                                    ${qualityLevel}
+                                </span>
+                            </td>
+                            <td style="text-align: center; color: #666;">
+                                ${results.n_clusters || 'N/A'}
+                            </td>
+                            <td style="font-size: 0.85em; color: #555;">
+                                ${result.description || metricDescriptions.davies_bouldin}
+                            </td>
+                        </tr>
+                    `;
+                } else {
+                    tableRows += `
+                        <tr>
+                            <td><strong>${metricNames.davies_bouldin}</strong></td>
+                            <td colspan="4" style="color: #FF9800; font-style: italic; text-align: center;">
+                                ${result.error || 'Không thể tính toán'}
+                            </td>
+                        </tr>
+                    `;
+                }
+            } else {
+                tableRows += `
+                    <tr>
+                        <td><strong>${metricNames.davies_bouldin}</strong></td>
+                        <td colspan="4" style="color: #999; font-style: italic; text-align: center;">Đánh giá thất bại</td>
+                    </tr>
+                `;
+            }
+            
             
             const html = `
                 <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
@@ -1641,8 +1894,7 @@
                     const resultsDiv = document.getElementById('evaluation-results');
                     const metricName = {
                         'silhouette': 'Silhouette Score',
-                        'davies_bouldin': 'Davies-Bouldin Index',
-                        'calinski_harabasz': 'Calinski-Harabasz Index'
+                        'davies_bouldin': 'Davies-Bouldin Index'
                     }[metric] || metric;
                     
                     resultsDiv.innerHTML = `
@@ -1700,20 +1952,37 @@
                 return div.innerHTML;
             }
             
-            container.innerHTML = chunks.map((chunk, idx) => {
+            // Get global chunk index (from allChunks array)
+            const getGlobalIndex = (localIdx) => {
+                // Find the index in allChunks array
+                const chunk = chunks[localIdx];
+                if (!chunk) return localIdx;
+                const globalIdx = allChunks.findIndex(c => 
+                    c.filename === chunk.filename && 
+                    c.position === chunk.position && 
+                    c.text === chunk.text
+                );
+                return globalIdx >= 0 ? globalIdx : localIdx;
+            };
+            
+            container.innerHTML = chunks.map((chunk, localIdx) => {
+                const globalIdx = getGlobalIndex(localIdx);
                 const fullText = chunk.text;
                 const preview = fullText.length > 300 ? fullText.substring(0, 300) + '...' : fullText;
                 
                 return `
                     <div class="chunk-card">
                         <div class="chunk-header">
-                            <span>${escapeHtml(chunk.filename || '')}${chunk.filename ? ' - ' : ''}Position: ${chunk.position} | Length: ${chunk.len_chars} chars</span>
+                            <span>
+                                <strong style="color: #667eea;">Index: ${globalIdx}</strong> | 
+                                ${escapeHtml(chunk.filename || '')}${chunk.filename ? ' - ' : ''}Position: ${chunk.position} | Length: ${chunk.len_chars} chars
+                            </span>
                         </div>
-                        <div class="chunk-text" id="chunk-text-${idx}">
+                        <div class="chunk-text" id="chunk-text-${localIdx}">
                             ${escapeHtml(preview)}
                         </div>
                         ${fullText.length > 300 ? `
-                            <button class="expand-btn" onclick="expandChunk(${idx})">
+                            <button class="expand-btn" onclick="expandChunk(${localIdx})">
                                 Expand
                             </button>
                         ` : ''}
@@ -1922,6 +2191,1066 @@
                 closeModal();
             }
         }
-    </script>
-</body>
+            // Display comprehensive evaluation results - Show all 3 metrics
+        function displayComprehensiveEvaluationResults(results) {
+            const resultsDiv = document.getElementById('evaluation-results');
+            if (!resultsDiv) {
+                console.error('evaluation-results element not found');
+                return;
+            }
+            
+            let html = '<h4 style="margin-bottom: 15px;">Kết Quả Đánh Giá Chất Lượng Embedding</h4>';
+            
+            // Metrics table - Show all 3 metrics
+            let tableRows = '';
+            
+            // Silhouette Score
+            if (results.silhouette_score) {
+                const metric = results.silhouette_score;
+                if (metric.score !== null && metric.score !== undefined) {
+                    const color = getQualityColor(metric.quality_level);
+                    tableRows += `
+                        <tr>
+                            <td><strong>Silhouette Score</strong></td>
+                            <td style="text-align: center; font-size: 18px; font-weight: bold; color: ${color};">
+                                ${metric.score.toFixed(4)}
+                            </td>
+                            <td style="text-align: center;">
+                                <span style="padding: 5px 12px; background: ${color}20; border-radius: 4px; font-weight: bold; color: ${color};">
+                                    ${metric.quality_level}
+                                </span>
+                            </td>
+                            <td style="text-align: center; color: #666;">
+                                ${results.n_clusters || 'N/A'}
+                            </td>
+                            <td style="font-size: 0.85em; color: #555;">${metric.description || 'Giá trị từ -1 đến 1. Giá trị cao hơn là tốt hơn. Đo lường mức độ tương tự của một điểm với cluster của nó so với các cluster khác.'}</td>
+                        </tr>
+                    `;
+                } else {
+                    tableRows += `
+                        <tr>
+                            <td><strong>Silhouette Score</strong></td>
+                            <td colspan="4" style="color: #FF9800; font-style: italic; text-align: center;">
+                                ${metric.error || 'Không thể tính toán'}
+                            </td>
+                        </tr>
+                    `;
+                }
+            } else {
+                tableRows += `
+                    <tr>
+                        <td><strong>Silhouette Score</strong></td>
+                        <td colspan="4" style="color: #999; font-style: italic; text-align: center;">Đánh giá thất bại</td>
+                    </tr>
+                `;
+            }
+            
+            // Calinski-Harabasz Index
+            if (results.calinski_harabasz_score) {
+                const metric = results.calinski_harabasz_score;
+                if (metric.score !== null && metric.score !== undefined) {
+                    const color = getQualityColor(metric.quality_level);
+                    tableRows += `
+                        <tr>
+                            <td><strong>Calinski-Harabasz Index</strong></td>
+                            <td style="text-align: center; font-size: 18px; font-weight: bold; color: ${color};">
+                                ${metric.score.toFixed(4)}
+                            </td>
+                            <td style="text-align: center;">
+                                <span style="padding: 5px 12px; background: ${color}20; border-radius: 4px; font-weight: bold; color: ${color};">
+                                    ${metric.quality_level}
+                                </span>
+                            </td>
+                            <td style="text-align: center; color: #666;">
+                                ${results.n_clusters || 'N/A'}
+                            </td>
+                            <td style="font-size: 0.85em; color: #555;">${metric.description || 'Giá trị cao hơn là tốt hơn. Tỷ lệ giữa độ phân tán between-cluster và within-cluster.'}</td>
+                        </tr>
+                    `;
+                } else {
+                    // Show error message
+                    tableRows += `
+                        <tr>
+                            <td><strong>Calinski-Harabasz Index</strong></td>
+                            <td colspan="4" style="color: #FF9800; font-style: italic; text-align: center;">
+                                ${metric.error || 'Không thể tính toán'} (Cần số clusters < số samples)
+                            </td>
+                        </tr>
+                    `;
+                }
+            } else {
+                tableRows += `
+                    <tr>
+                        <td><strong>Calinski-Harabasz Index</strong></td>
+                        <td colspan="4" style="color: #999; font-style: italic; text-align: center;">Đánh giá thất bại</td>
+                    </tr>
+                `;
+            }
+            
+            // Davies-Bouldin Index
+            if (results.davies_bouldin) {
+                const metric = results.davies_bouldin;
+                if (metric.score !== null && metric.score !== undefined) {
+                    const color = getQualityColor(metric.quality_level);
+                    tableRows += `
+                        <tr>
+                            <td><strong>Davies-Bouldin Index</strong></td>
+                            <td style="text-align: center; font-size: 18px; font-weight: bold; color: ${color};">
+                                ${metric.score.toFixed(4)}
+                            </td>
+                            <td style="text-align: center;">
+                                <span style="padding: 5px 12px; background: ${color}20; border-radius: 4px; font-weight: bold; color: ${color};">
+                                    ${metric.quality_level}
+                                </span>
+                            </td>
+                            <td style="text-align: center; color: #666;">
+                                ${results.n_clusters || 'N/A'}
+                            </td>
+                            <td style="font-size: 0.85em; color: #555;">${metric.description || 'Giá trị thấp hơn là tốt hơn. Đo lường tỷ lệ tương tự trung bình giữa các cluster.'}</td>
+                        </tr>
+                    `;
+                } else {
+                    tableRows += `
+                        <tr>
+                            <td><strong>Davies-Bouldin Index</strong></td>
+                            <td colspan="4" style="color: #FF9800; font-style: italic; text-align: center;">
+                                ${metric.error || 'Không thể tính toán'}
+                            </td>
+                        </tr>
+                    `;
+                }
+            } else {
+                tableRows += `
+                    <tr>
+                        <td><strong>Davies-Bouldin Index</strong></td>
+                        <td colspan="4" style="color: #999; font-style: italic; text-align: center;">Đánh giá thất bại</td>
+                    </tr>
+                `;
+            }
+            
+            html += `
+                <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <thead>
+                        <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                            <th style="padding: 15px; text-align: left; font-weight: 600;">Metric</th>
+                            <th style="padding: 15px; text-align: center; font-weight: 600;">Score</th>
+                            <th style="padding: 15px; text-align: center; font-weight: 600;">Quality Level</th>
+                            <th style="padding: 15px; text-align: center; font-weight: 600;">Clusters</th>
+                            <th style="padding: 15px; text-align: left; font-weight: 600;">Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRows}
+                    </tbody>
+                </table>
+            `;
+            
+            resultsDiv.innerHTML = html;
+        }
+        
+        // Step 4: Generate Visualization
+        async function generateVisualization() {
+            if (allEmbeddings.length === 0) {
+                showAlert('step4-alerts', 'No embeddings available. Please generate embeddings in Step 3 first.', 'error');
+                return;
+            }
+            
+            const btn = document.getElementById('generate-viz-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+            
+            try {
+                const dimensions = parseInt(document.getElementById('viz-dimensions').value) || 2;
+                
+                const response = await fetch('/api/visualization/reduce', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        embeddings: allEmbeddings,
+                        method: 'umap',  // Always use UMAP
+                        n_components: dimensions,
+                        chunks: allChunks
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.data) {
+                    displayVisualization(data.data, dimensions);
+                    showAlert('step4-alerts', `Visualization generated successfully using UMAP ${dimensions}D`, 'success');
+                } else {
+                    showAlert('step4-alerts', data.error || 'Failed to generate visualization', 'error');
+                }
+            } catch (error) {
+                console.error('Error generating visualization:', error);
+                showAlert('step4-alerts', 'Error: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+        
+        // Store visualization data for filtering
+        let currentVizData = null;
+        let currentVizDimensions = null;
+        
+        // Display visualization
+        function displayVisualization(data, dimensions) {
+            const resultsDiv = document.getElementById('visualization-results');
+            if (!resultsDiv) return;
+            
+            // Store for filtering
+            currentVizData = data;
+            currentVizDimensions = dimensions;
+            
+            const points = data.points || [];
+            
+            // Build document filter
+            const uniqueDocs = [...new Set(points.map(p => p.filename || 'Unknown'))];
+            const filterSelect = document.getElementById('viz-filter-doc');
+            if (filterSelect) {
+                filterSelect.innerHTML = '<option value="all">Tất cả tài liệu</option>';
+                uniqueDocs.forEach(doc => {
+                    filterSelect.innerHTML += `<option value="${escapeHtml(doc)}">${escapeHtml(doc)}</option>`;
+                });
+                document.getElementById('viz-filter-group').style.display = 'block';
+                filterSelect.onchange = () => filterVisualization(filterSelect.value);
+            }
+            
+            renderVisualization(points, dimensions);
+        }
+        
+        // Filter visualization by document
+        function filterVisualization(filename) {
+            if (!currentVizData) return;
+            
+            let filteredPoints = currentVizData.points || [];
+            if (filename !== 'all') {
+                filteredPoints = filteredPoints.filter(p => p.filename === filename);
+            }
+            
+            renderVisualization(filteredPoints, currentVizDimensions);
+        }
+        
+        // Render visualization
+        function renderVisualization(points, dimensions) {
+            if (points.length === 0) {
+                document.getElementById('visualization-results').innerHTML = '<p style="text-align: center; color: #999;">Không có dữ liệu để hiển thị</p>';
+                return;
+            }
+            
+            const is3D = dimensions === 3;
+            
+            // Color map by document
+            const uniqueDocs = [...new Set(points.map(p => p.filename || 'Unknown'))];
+            const colors = ['#667eea', '#f093fb', '#4facfe', '#43e97b', '#fa709a', '#fee140', '#30cfd0', '#330867'];
+            const docColors = {};
+            uniqueDocs.forEach((doc, idx) => {
+                docColors[doc] = colors[idx % colors.length];
+            });
+            
+            if (is3D) {
+                // Render 3D with Plotly.js
+                render3DVisualization(points, docColors);
+            } else {
+                // Render 2D with SVG
+                render2DVisualization(points, docColors);
+            }
+        }
+        
+        // Render 2D visualization with SVG
+        function render2DVisualization(points, docColors) {
+            const minX = Math.min(...points.map(p => p.x));
+            const maxX = Math.max(...points.map(p => p.x));
+            const minY = Math.min(...points.map(p => p.y));
+            const maxY = Math.max(...points.map(p => p.y));
+            const rangeX = maxX - minX || 1;
+            const rangeY = maxY - minY || 1;
+            
+            const uniqueDocs = Object.keys(docColors);
+            
+            let html = `
+                <div style="background: white; padding: 20px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <h4 style="margin-bottom: 15px;">UMAP 2D Visualization</h4>
+                    <div style="margin-bottom: 15px;">
+                        <strong>Số điểm hiển thị:</strong> ${points.length}
+                    </div>
+                    <div style="position: relative; width: 100%; height: 600px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa; overflow: hidden;">
+                        <svg id="viz-svg" width="100%" height="100%" style="position: absolute; top: 0; left: 0;">
+            `;
+            
+            points.forEach((point, index) => {
+                const x = ((point.x - minX) / rangeX * 90 + 5);
+                const y = ((point.y - minY) / rangeY * 90 + 5);
+                const color = docColors[point.filename || 'Unknown'] || '#667eea';
+                
+                // Prepare tooltip content with full chunk information
+                // Try to get chunk_id from point, fallback to index
+                let chunkIndex = null;
+                if (point.chunk_id !== undefined && point.chunk_id !== null) {
+                    chunkIndex = point.chunk_id;
+                } else if (point.index !== undefined && point.index !== null) {
+                    chunkIndex = point.index;
+                } else {
+                    chunkIndex = index;
+                }
+                
+                // Ensure chunkIndex is a valid number
+                chunkIndex = parseInt(chunkIndex);
+                if (isNaN(chunkIndex) || chunkIndex < 0) {
+                    chunkIndex = index;
+                }
+                
+                const chunkInfo = (allChunks && allChunks[chunkIndex] !== undefined) ? allChunks[chunkIndex] : {};
+                const tooltipContent = {
+                    filename: point.filename || chunkInfo.filename || 'Unknown',
+                    chunkId: chunkIndex,
+                    position: point.position !== undefined ? point.position : (chunkInfo.position !== undefined ? chunkInfo.position : 0),
+                    text: point.text_preview || point.full_text || chunkInfo.text || 'No preview available',
+                    fullText: point.full_text || chunkInfo.text || point.text_preview || '',
+                    length: chunkInfo.text ? chunkInfo.text.length : (point.full_text ? point.full_text.length : 0)
+                };
+                
+                // Store tooltip data in data attribute - use single quotes for attribute
+                const tooltipDataAttr = JSON.stringify(tooltipContent).replace(/'/g, "&#39;");
+                
+                html += `
+                    <circle cx="${x}%" cy="${y}%" r="6" fill="${color}" opacity="0.7" stroke="#fff" stroke-width="1"
+                            data-index="${index}"
+                            data-chunk-id="${chunkIndex}"
+                            data-tooltip='${tooltipDataAttr}'
+                            onmouseover="showVizTooltip2D(event, this)"
+                            onmouseout="hideVizTooltip()"
+                            style="cursor: pointer;">
+                    </circle>
+                `;
+            });
+            
+            // Legend
+            html += '</svg>';
+            html += '<div style="position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 4px; font-size: 12px;">';
+            html += '<strong>Documents:</strong><br>';
+            uniqueDocs.forEach(doc => {
+                html += `<span style="display: inline-block; width: 12px; height: 12px; background: ${docColors[doc]}; border-radius: 50%; margin-right: 5px;"></span> ${escapeHtml(doc)}<br>`;
+            });
+            html += '</div>';
+            
+            html += `
+                        <div id="viz-tooltip" style="position: fixed; background: rgba(0,0,0,0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; display: none; pointer-events: auto; z-index: 10000; max-width: 300px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);"></div>
+                    </div>
+                    <p style="margin-top: 15px; color: #666; font-size: 0.9em;">${currentVizData.description || ''}</p>
+                </div>
+            `;
+            
+            document.getElementById('visualization-results').innerHTML = html;
+            
+            // Setup tooltip hover handlers
+            setTimeout(setupTooltipHover, 100);
+        }
+        
+        // Render 3D visualization with Plotly.js
+        function render3DVisualization(points, docColors) {
+            const uniqueDocs = Object.keys(docColors);
+            
+            // Group points by document for different traces
+            const traces = uniqueDocs.map(doc => {
+                const docPoints = points.filter(p => (p.filename || 'Unknown') === doc);
+                const color = docColors[doc];
+                
+                return {
+                    x: docPoints.map(p => p.x),
+                    y: docPoints.map(p => p.y),
+                    z: docPoints.map(p => p.z || 0),
+                    mode: 'markers',
+                    type: 'scatter3d',
+                    name: doc,
+                    marker: {
+                        size: 5,
+                        color: color,
+                        opacity: 0.7,
+                        line: {
+                            color: 'rgba(255, 255, 255, 0.5)',
+                            width: 1
+                        }
+                    },
+                    // Store point data for custom tooltip
+                    customdata: docPoints.map((p, idx) => ({
+                        chunk_id: p.chunk_id,
+                        index: p.index,
+                        filename: p.filename,
+                        position: p.position,
+                        text_preview: p.text_preview,
+                        full_text: p.full_text
+                    })),
+                    hovertemplate: '<extra></extra>'  // Hide default tooltip but keep hover events
+                };
+            });
+            
+            const layout = {
+                title: {
+                    text: 'UMAP 3D Visualization',
+                    font: { size: 16 }
+                },
+                scene: {
+                    xaxis: { title: 'X' },
+                    yaxis: { title: 'Y' },
+                    zaxis: { title: 'Z' },
+                    camera: {
+                        eye: { x: 1.5, y: 1.5, z: 1.5 }
+                    }
+                },
+                margin: { l: 0, r: 0, t: 40, b: 0 },
+                height: 600,
+                showlegend: true,
+                legend: {
+                    x: 1.02,
+                    y: 1,
+                    bgcolor: 'rgba(255, 255, 255, 0.8)',
+                    bordercolor: '#ddd',
+                    borderwidth: 1
+                }
+                // Don't set hovermode: false, we need hover events for custom tooltip
+            };
+            
+            const config = {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                displaylogo: false,
+                doubleClick: 'reset'
+            };
+            
+            let html = `
+                <div style="background: white; padding: 20px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <h4 style="margin-bottom: 15px;">UMAP 3D Visualization</h4>
+                    <div style="margin-bottom: 15px;">
+                        <strong>Số điểm hiển thị:</strong> ${points.length}
+                        <span style="margin-left: 10px; color: #666; font-size: 0.9em;">(Kéo thả để xoay, zoom để phóng to/thu nhỏ)</span>
+                    </div>
+                    <div id="plotly-3d-viz" style="width: 100%; height: 600px; border: 1px solid #ddd; border-radius: 4px; position: relative;"></div>
+                    <div id="viz-tooltip" style="position: fixed; background: rgba(0,0,0,0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; display: none; pointer-events: auto; z-index: 10000; max-width: 300px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);"></div>
+                    <p style="margin-top: 15px; color: #666; font-size: 0.9em;">${currentVizData.description || ''}</p>
+                </div>
+            `;
+            
+            document.getElementById('visualization-results').innerHTML = html;
+            
+            // Setup tooltip hover handlers
+            setTimeout(setupTooltipHover, 100);
+            
+            // Render Plotly chart
+            const plotDiv = document.getElementById('plotly-3d-viz');
+            Plotly.newPlot('plotly-3d-viz', traces, layout, config);
+            
+            // Add custom hover handler for 3D
+            plotDiv.on('plotly_hover', function(data) {
+                if (data.points && data.points.length > 0) {
+                    const point = data.points[0];
+                    const pointIndex = point.pointNumber;
+                    const traceIndex = point.curveNumber;
+                    
+                    // Get custom data from point if available
+                    let actualPoint = null;
+                    if (point.customdata) {
+                        actualPoint = point.customdata;
+                    } else {
+                        // Fallback to filtering points
+                        const doc = uniqueDocs[traceIndex];
+                        const docPoints = points.filter(p => (p.filename || 'Unknown') === doc);
+                        actualPoint = docPoints[pointIndex];
+                    }
+                    
+                    if (actualPoint) {
+                        // Try to get chunk_id from actualPoint, fallback to index
+                        let chunkIndex = null;
+                        if (actualPoint.chunk_id !== undefined && actualPoint.chunk_id !== null) {
+                            chunkIndex = actualPoint.chunk_id;
+                        } else if (actualPoint.index !== undefined && actualPoint.index !== null) {
+                            chunkIndex = actualPoint.index;
+                        } else {
+                            // Calculate global index: sum of previous documents' chunks + current index
+                            let globalIndex = 0;
+                            for (let i = 0; i < traceIndex; i++) {
+                                const prevDoc = uniqueDocs[i];
+                                const prevDocPoints = points.filter(p => (p.filename || 'Unknown') === prevDoc);
+                                globalIndex += prevDocPoints.length;
+                            }
+                            chunkIndex = globalIndex + pointIndex;
+                        }
+                        
+                        // Ensure chunkIndex is a valid number
+                        chunkIndex = parseInt(chunkIndex);
+                        if (isNaN(chunkIndex) || chunkIndex < 0) {
+                            // Fallback: calculate from all points
+                            let globalIndex = 0;
+                            for (let i = 0; i < traceIndex; i++) {
+                                const prevDoc = uniqueDocs[i];
+                                const prevDocPoints = points.filter(p => (p.filename || 'Unknown') === prevDoc);
+                                globalIndex += prevDocPoints.length;
+                            }
+                            chunkIndex = globalIndex + pointIndex;
+                        }
+                        
+                        const chunkInfo = (allChunks && allChunks[chunkIndex] !== undefined) ? allChunks[chunkIndex] : {};
+                        const tooltipData = {
+                            filename: actualPoint.filename || chunkInfo.filename || 'Unknown',
+                            chunkId: chunkIndex,
+                            position: actualPoint.position !== undefined ? actualPoint.position : (chunkInfo.position !== undefined ? chunkInfo.position : 0),
+                            text: actualPoint.text_preview || actualPoint.full_text || chunkInfo.text || 'No preview available',
+                            fullText: actualPoint.full_text || chunkInfo.text || actualPoint.text_preview || '',
+                            length: chunkInfo.text ? chunkInfo.text.length : (actualPoint.full_text ? actualPoint.full_text.length : 0)
+                        };
+                        
+                        // Use the same tooltip function as 2D
+                        showVizTooltip3D(data.event, tooltipData);
+                    }
+                }
+            });
+            
+            // Hide tooltip when mouse leaves plot (but allow hover into tooltip)
+            plotDiv.on('plotly_unhover', function() {
+                // Delay hide to allow moving mouse to tooltip
+                setTimeout(() => {
+                    const tooltip = document.getElementById('viz-tooltip');
+                    if (tooltip && !tooltip.matches(':hover')) {
+                        hideVizTooltip();
+                    }
+                }, 100);
+            });
+        }
+        
+        // Show tooltip for 2D visualization
+        // Common function to render tooltip content (used by both 2D and 3D)
+        function renderTooltipContent(data) {
+            // Helper function to escape HTML
+            function escapeHtml(text) {
+                if (!text) return '';
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+            
+            // Display full chunk information
+            const displayText = data.fullText || data.text || 'Không có nội dung';
+            const textPreview = displayText.length > 300 ? displayText.substring(0, 300) + '...' : displayText;
+            
+            // Get chunkId - handle null/undefined cases
+            let chunkIdDisplay = 'N/A';
+            if (data.chunkId !== undefined && data.chunkId !== null) {
+                chunkIdDisplay = String(data.chunkId);
+            }
+            
+            return `
+                <div style="margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.3); padding-bottom: 8px;">
+                    <strong style="color: #4facfe; font-size: 13px;">📄 ${escapeHtml(data.filename || 'Unknown')}</strong>
+                </div>
+                <div style="margin-bottom: 8px; font-size: 11px; opacity: 0.9; line-height: 1.6;">
+                    <div><strong style="color: #ffd700;">Chunk Index:</strong> <span style="color: #4facfe; font-weight: bold;">${chunkIdDisplay}</span></div>
+                    <div><strong>Position:</strong> ${data.position !== undefined && data.position !== null ? data.position : 'N/A'}</div>
+                    ${data.length > 0 ? `<div><strong>Độ dài:</strong> ${data.length} ký tự</div>` : ''}
+                </div>
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2);">
+                    <div style="font-size: 11px; font-weight: bold; margin-bottom: 6px; opacity: 0.9;">Nội dung chunk:</div>
+                    <div style="font-size: 11px; line-height: 1.6; max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word;">
+                        ${escapeHtml(textPreview)}
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Show tooltip for 2D visualization
+        function showVizTooltip2D(event, element) {
+            const tooltip = document.getElementById('viz-tooltip');
+            if (!tooltip || !element) {
+                return;
+            }
+            
+            const tooltipDataStr = element.getAttribute('data-tooltip');
+            if (!tooltipDataStr) {
+                return;
+            }
+            
+            let data;
+            try {
+                data = JSON.parse(tooltipDataStr);
+            } catch (e) {
+                console.error('Error parsing tooltip data:', e);
+                return;
+            }
+            
+            if (!data) {
+                return;
+            }
+            
+            tooltip.innerHTML = renderTooltipContent(data);
+            tooltip.style.display = 'block';
+            
+            // Position tooltip relative to viewport (since we use position: fixed)
+            const offset = 15;
+            let x = event.clientX + offset;
+            let y = event.clientY + offset;
+            
+            // Get tooltip dimensions after it's displayed
+            tooltip.style.left = x + 'px';
+            tooltip.style.top = y + 'px';
+            
+            // Adjust if off screen - wait for tooltip to render
+            setTimeout(() => {
+                const rect = tooltip.getBoundingClientRect();
+                const windowWidth = window.innerWidth;
+                const windowHeight = window.innerHeight;
+                
+                // Adjust horizontal position
+                if (x + rect.width > windowWidth) {
+                    x = event.clientX - rect.width - offset;
+                    tooltip.style.left = x + 'px';
+                }
+                
+                // Adjust vertical position
+                if (y + rect.height > windowHeight) {
+                    y = event.clientY - rect.height - offset;
+                    tooltip.style.top = y + 'px';
+                }
+                
+                // Ensure tooltip is not off left edge
+                if (x < 0) {
+                    tooltip.style.left = offset + 'px';
+                }
+                
+                // Ensure tooltip is not off top edge
+                if (y < 0) {
+                    tooltip.style.top = offset + 'px';
+                }
+            }, 10);
+        }
+        
+        // Show tooltip for 3D visualization
+        function showVizTooltip3D(event, data) {
+            const tooltip = document.getElementById('viz-tooltip');
+            if (!tooltip || !data) {
+                return;
+            }
+            
+            tooltip.innerHTML = renderTooltipContent(data);
+            tooltip.style.display = 'block';
+            
+            // Position tooltip relative to viewport
+            const offset = 15;
+            let x = event.clientX + offset;
+            let y = event.clientY + offset;
+            
+            tooltip.style.left = x + 'px';
+            tooltip.style.top = y + 'px';
+            
+            // Adjust if off screen
+            setTimeout(() => {
+                const rect = tooltip.getBoundingClientRect();
+                const windowWidth = window.innerWidth;
+                const windowHeight = window.innerHeight;
+                
+                if (x + rect.width > windowWidth) {
+                    x = event.clientX - rect.width - offset;
+                    tooltip.style.left = x + 'px';
+                }
+                
+                if (y + rect.height > windowHeight) {
+                    y = event.clientY - rect.height - offset;
+                    tooltip.style.top = y + 'px';
+                }
+                
+                if (x < 0) {
+                    tooltip.style.left = offset + 'px';
+                }
+                
+                if (y < 0) {
+                    tooltip.style.top = offset + 'px';
+                }
+            }, 10);
+        }
+        
+        // Show tooltip for 3D visualization (legacy function for compatibility)
+        function showVizTooltip(event, dataStr) {
+            const tooltip = document.getElementById('viz-tooltip');
+            if (!tooltip) return;
+            
+            let data;
+            try {
+                // Parse JSON string if it's a string
+                if (typeof dataStr === 'string') {
+                    data = JSON.parse(dataStr.replace(/&quot;/g, '"').replace(/&#39;/g, "'"));
+                } else {
+                    data = dataStr;
+                }
+            } catch (e) {
+                console.error('Error parsing tooltip data:', e);
+                return;
+            }
+            
+            if (!data) return;
+            
+            // Display full chunk information
+            const displayText = data.fullText || data.text || 'Không có nội dung';
+            const textPreview = displayText.length > 300 ? displayText.substring(0, 300) + '...' : displayText;
+            
+            const html = `
+                <div style="margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.3); padding-bottom: 8px;">
+                    <strong style="color: #4facfe; font-size: 13px;">📄 ${escapeHtml(data.filename || 'Unknown')}</strong>
+                </div>
+                <div style="margin-bottom: 8px; font-size: 11px; opacity: 0.9; line-height: 1.6;">
+                    <div><strong>Chunk Index:</strong> ${data.chunkId !== undefined ? data.chunkId : 'N/A'}</div>
+                    <div><strong>Position:</strong> ${data.position !== undefined ? data.position : 'N/A'}</div>
+                    ${data.length > 0 ? `<div><strong>Độ dài:</strong> ${data.length} ký tự</div>` : ''}
+                </div>
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2);">
+                    <div style="font-size: 11px; font-weight: bold; margin-bottom: 6px; opacity: 0.9;">Nội dung chunk:</div>
+                    <div style="font-size: 11px; line-height: 1.6; max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word;">
+                        ${escapeHtml(textPreview)}
+                    </div>
+                </div>
+            `;
+            tooltip.innerHTML = html;
+            tooltip.style.display = 'block';
+            
+            // Position tooltip
+            const rect = tooltip.getBoundingClientRect();
+            const x = event.clientX + 15;
+            const y = event.clientY + 15;
+            tooltip.style.left = x + 'px';
+            tooltip.style.top = y + 'px';
+            
+            // Adjust if off screen
+            if (x + rect.width > window.innerWidth) {
+                tooltip.style.left = (event.clientX - rect.width - 15) + 'px';
+            }
+            if (y + rect.height > window.innerHeight) {
+                tooltip.style.top = (event.clientY - rect.height - 15) + 'px';
+            }
+        }
+        
+        function hideVizTooltip() {
+            const tooltip = document.getElementById('viz-tooltip');
+            if (tooltip) {
+                // Only hide if mouse is not over tooltip
+                setTimeout(() => {
+                    if (tooltip && !tooltip.matches(':hover')) {
+                        tooltip.style.display = 'none';
+                    }
+                }, 100);
+            }
+        }
+        
+        // Setup tooltip hover handlers after DOM is ready
+        function setupTooltipHover() {
+            const tooltip = document.getElementById('viz-tooltip');
+            if (tooltip) {
+                // Remove existing listeners to avoid duplicates
+                const newTooltip = tooltip.cloneNode(true);
+                tooltip.parentNode.replaceChild(newTooltip, tooltip);
+                
+                // Add hover handlers
+                newTooltip.addEventListener('mouseenter', function() {
+                    this.style.display = 'block';
+                });
+                
+                newTooltip.addEventListener('mouseleave', function() {
+                    this.style.display = 'none';
+                });
+            }
+        }
+        
+        // Step 5: Test Retrieval
+        async function testRetrieval() {
+            if (allEmbeddings.length === 0) {
+                showAlert('step5-alerts', 'No embeddings available. Please generate embeddings in Step 3 first.', 'error');
+                return;
+            }
+            
+            const queryText = document.getElementById('retrieval-query').value.trim();
+            if (!queryText) {
+                showAlert('step5-alerts', 'Please enter a query', 'error');
+                return;
+            }
+            
+            const relevantIndicesStr = document.getElementById('relevant-indices').value.trim();
+            if (!relevantIndicesStr) {
+                showAlert('step5-alerts', 'Please enter relevant document indices', 'error');
+                return;
+            }
+            
+            const btn = document.getElementById('test-retrieval-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Testing...';
+            
+            try {
+                // Generate query embedding
+                const methodSelect = document.getElementById('embedding-method');
+                const method = methodSelect ? methodSelect.value : 'ollama';
+                
+                const generateResponse = await fetch('/api/embeddings/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chunks: [{ text: queryText, filename: 'query', position: 0 }],
+                        method: method
+                    })
+                });
+                
+                const generateData = await generateResponse.json();
+                if (!generateData.success || !generateData.embeddings || generateData.embeddings.length === 0) {
+                    showAlert('step5-alerts', 'Failed to generate query embedding', 'error');
+                    return;
+                }
+                
+                const queryEmbedding = generateData.embeddings[0].embedding;
+                const documentEmbeddings = allEmbeddings.map(e => e.embedding);
+                const relevantIndices = relevantIndicesStr.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+                const kValues = document.getElementById('k-values').value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+                
+                const response = await fetch('/api/retrieval/evaluate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query_embedding: queryEmbedding,
+                        document_embeddings: documentEmbeddings,
+                        relevant_doc_indices: relevantIndices,
+                        k_values: kValues.length > 0 ? kValues : [5, 10]
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.results) {
+                    displayRetrievalResults(data.results);
+                    showAlert('step5-alerts', 'Retrieval test completed successfully', 'success');
+                } else {
+                    showAlert('step5-alerts', data.error || 'Failed to test retrieval', 'error');
+                }
+            } catch (error) {
+                console.error('Error testing retrieval:', error);
+                showAlert('step5-alerts', 'Error: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+        
+        // Display retrieval results
+        function displayRetrievalResults(results) {
+            const resultsDiv = document.getElementById('retrieval-results');
+            if (!resultsDiv) return;
+            
+            let html = '<h4 style="margin-bottom: 15px;">Retrieval Quality Results</h4>';
+            
+            // Metrics
+            const metrics = results;
+            let tableRows = '';
+            
+            for (const [key, value] of Object.entries(metrics)) {
+                if (key === 'retrieved_documents') continue;
+                
+                if (value && typeof value === 'object' && 'score' in value) {
+                    const color = getQualityColor(value.quality_level || 'UNKNOWN');
+                    tableRows += `
+                        <tr>
+                            <td><strong>${key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</strong></td>
+                            <td style="text-align: center; font-size: 18px; font-weight: bold; color: ${color};">
+                                ${value.score.toFixed(4)}
+                            </td>
+                            <td style="text-align: center;">
+                                <span style="padding: 5px 12px; background: ${color}20; border-radius: 4px; font-weight: bold; color: ${color};">
+                                    ${value.quality_level || 'N/A'}
+                                </span>
+                            </td>
+                            <td style="font-size: 0.85em; color: #555;">${value.description || ''}</td>
+                        </tr>
+                    `;
+                }
+            }
+            
+            html += `
+                <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px;">
+                    <thead>
+                        <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                            <th style="padding: 15px; text-align: left;">Metric</th>
+                            <th style="padding: 15px; text-align: center;">Score</th>
+                            <th style="padding: 15px; text-align: center;">Quality Level</th>
+                            <th style="padding: 15px; text-align: left;">Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRows}
+                    </tbody>
+                </table>
+            `;
+            
+            // Retrieved documents with content
+            if (results.retrieved_documents && results.retrieved_documents.length > 0) {
+                html += '<h4 style="margin-bottom: 15px;">Các Documents Được Lấy</h4>';
+                html += '<div style="max-height: 600px; overflow-y: auto;">';
+                results.retrieved_documents.forEach((doc, idx) => {
+                    const bgColor = doc.is_relevant ? '#4CAF5020' : '#F4433620';
+                    const chunkIndex = doc.index;
+                    const chunk = allChunks[chunkIndex];
+                    const chunkText = chunk ? (chunk.text || '') : '';
+                    const chunkFilename = chunk ? (chunk.filename || 'Unknown') : 'Unknown';
+                    
+                    html += `
+                        <div style="padding: 15px; margin: 10px 0; background: ${bgColor}; border-radius: 6px; border-left: 4px solid ${doc.is_relevant ? '#4CAF50' : '#F44336'}; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <div>
+                                    <strong style="font-size: 16px;">Hạng ${idx + 1}: Chunk ${doc.index}</strong>
+                                    <span style="margin-left: 10px; padding: 3px 10px; background: ${doc.is_relevant ? '#4CAF50' : '#F44336'}; color: white; border-radius: 4px; font-size: 0.85em; font-weight: bold;">
+                                        ${doc.is_relevant ? 'Liên quan' : 'Không liên quan'}
+                                    </span>
+                                </div>
+                                <span style="color: #666; font-weight: bold;">Độ tương tự: ${doc.similarity.toFixed(4)}</span>
+                            </div>
+                            <div style="margin-top: 8px; padding: 8px; background: rgba(255,255,255,0.5); border-radius: 4px; font-size: 0.9em; color: #555;">
+                                <strong>📄 Tài liệu:</strong> ${escapeHtml(chunkFilename)}<br>
+                                ${chunkText ? `<div style="margin-top: 8px; padding: 10px; background: white; border-radius: 4px; border: 1px solid #ddd; max-height: 200px; overflow-y: auto; font-size: 0.9em; line-height: 1.6; color: #333;">
+                                    ${escapeHtml(chunkText)}
+                                </div>` : '<span style="color: #999; font-style: italic;">Không có nội dung</span>'}
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+            }
+            
+            resultsDiv.innerHTML = html;
+        }
+        
+        // Step 6: Evaluate RAGAS
+        async function evaluateRAGAS() {
+            const question = document.getElementById('ragas-question').value.trim();
+            const answer = document.getElementById('ragas-answer').value.trim();
+            const contextsStr = document.getElementById('ragas-contexts').value.trim();
+            
+            if (!question || !answer || !contextsStr) {
+                showAlert('step6-alerts', 'Please fill in all required fields: Question, Answer, and Contexts', 'error');
+                return;
+            }
+            
+            const btn = document.getElementById('evaluate-ragas-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Evaluating...';
+            
+            try {
+                // Parse contexts
+                let contexts = [];
+                try {
+                    contexts = JSON.parse(contextsStr);
+                } catch (e) {
+                    contexts = contextsStr.split('\n').filter(line => line.trim());
+                }
+                
+                if (!Array.isArray(contexts) || contexts.length === 0) {
+                    showAlert('step6-alerts', 'Invalid contexts format. Use JSON array or one context per line.', 'error');
+                    return;
+                }
+                
+                // Parse relevant contexts if provided
+                const relevantStr = document.getElementById('ragas-relevant-contexts').value.trim();
+                let relevantContexts = null;
+                if (relevantStr) {
+                    const indices = relevantStr.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+                    relevantContexts = indices.map(idx => contexts[idx]).filter(c => c);
+                }
+                
+                const response = await fetch('/api/ragas/evaluate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question: question,
+                        answer: answer,
+                        contexts: contexts,
+                        relevant_contexts: relevantContexts
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.results) {
+                    displayRAGASResults(data.results, data.overall_quality, data.average_score);
+                    showAlert('step6-alerts', 'RAGAS evaluation completed successfully', 'success');
+                } else {
+                    showAlert('step6-alerts', data.error || 'Failed to evaluate RAGAS', 'error');
+                }
+            } catch (error) {
+                console.error('Error evaluating RAGAS:', error);
+                showAlert('step6-alerts', 'Error: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+        
+        // Display RAGAS results
+        function displayRAGASResults(results, overallQuality, averageScore) {
+            const resultsDiv = document.getElementById('ragas-results');
+            if (!resultsDiv) return;
+            
+            const overallColor = getQualityColor(overallQuality || 'UNKNOWN');
+            
+            let html = `
+                <div style="background: white; padding: 20px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <h4 style="margin-bottom: 15px;">RAGAS Evaluation Results</h4>
+                    <div style="margin-bottom: 20px; padding: 15px; background: ${overallColor}20; border-radius: 6px; border-left: 4px solid ${overallColor};">
+                        <strong>Overall Quality:</strong> <span style="color: ${overallColor}; font-weight: bold;">${overallQuality || 'N/A'}</span><br>
+                        <strong>Average Score:</strong> <span style="color: ${overallColor}; font-weight: bold;">${averageScore ? averageScore.toFixed(4) : 'N/A'}</span>
+                    </div>
+            `;
+            
+            let tableRows = '';
+            const metricNames = {
+                'faithfulness': 'Faithfulness',
+                'answer_relevancy': 'Answer Relevancy',
+                'context_precision': 'Context Precision',
+                'context_recall': 'Context Recall'
+            };
+            
+            for (const [key, value] of Object.entries(results)) {
+                if (value && value.score !== undefined) {
+                    const color = getQualityColor(value.quality_level || 'UNKNOWN');
+                    tableRows += `
+                        <tr>
+                            <td><strong>${metricNames[key] || key}</strong></td>
+                            <td style="text-align: center; font-size: 18px; font-weight: bold; color: ${color};">
+                                ${value.score.toFixed(4)}
+                            </td>
+                            <td style="text-align: center;">
+                                <span style="padding: 5px 12px; background: ${color}20; border-radius: 4px; font-weight: bold; color: ${color};">
+                                    ${value.quality_level || 'N/A'}
+                                </span>
+                            </td>
+                            <td style="font-size: 0.85em; color: #555;">${value.description || ''}</td>
+                        </tr>
+                    `;
+                }
+            }
+            
+            html += `
+                <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <thead>
+                        <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                            <th style="padding: 15px; text-align: left;">Metric</th>
+                            <th style="padding: 15px; text-align: center;">Score</th>
+                            <th style="padding: 15px; text-align: center;">Quality Level</th>
+                            <th style="padding: 15px; text-align: left;">Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRows}
+                    </tbody>
+                </table>
+                </div>
+            `;
+            
+            resultsDiv.innerHTML = html;
+        }
+        </script>
+    </body>
 </html>

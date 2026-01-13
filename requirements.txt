@@ -5,6 +5,12 @@ numpy==1.24.3
 scikit-learn
 python-dotenv==1.0.0
 
+# Optional: For UMAP visualization (recommended)
+umap-learn>=0.5.4
+
+# Optional: For RAGAS evaluation (if using full RAGAS framework)
+# ragas>=0.1.0
+
 # Optional: Cho semantic chunking thực sự
 # Cài một trong hai options sau:
 

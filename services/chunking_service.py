@@ -287,7 +287,7 @@ class ChunkingService:
             return float(dot_product / (magnitude1 * magnitude2))
     
     @staticmethod
-    def semantic_chunk(text: str, chunk_size: int = 500, model: str = "ollama", ollama_url: Optional[str] = None, ollama_model: Optional[str] = None) -> List[str]:
+    def semantic_chunk(text: str, chunk_size: int = 500, model: str = "ollama", ollama_model: Optional[str] = None) -> List[str]:
         """
         Semantic chunking using embeddings from Ollama server
         
@@ -295,7 +295,6 @@ class ChunkingService:
             text: Text to chunk
             chunk_size: Desired chunk size (characters)
             model: "ollama" (default) or "sentence-transformers" (fallback)
-            ollama_url: Ollama API URL (default http://localhost:11434)
             ollama_model: Specific model name (if not using default from config)
         
         Returns:
@@ -325,12 +324,12 @@ class ChunkingService:
             
             # If ollama selected (default), try connecting to Ollama server
             if model.lower() == "ollama" or model.lower() != "sentence-transformers":
-                logger.info(f"Using Ollama at {ollama_url or OLLAMA_BASE_URL}")
+                logger.info(f"Using Ollama at {OLLAMA_BASE_URL}")
                 use_model = ollama_model or OLLAMA_EMBEDDING_MODEL
                 embeddings = ChunkingService._get_embeddings_ollama(
                     proper_sentences, 
                     model=use_model,
-                    base_url=ollama_url
+                    base_url=OLLAMA_BASE_URL
                 )
                 
                 # If ollama fails, fallback to sentence-transformers
@@ -495,12 +494,10 @@ class ChunkingService:
         elif strategy == 'semantic':
             chunk_size = params.get('chunk_size', 500)
             model = params.get('model', 'ollama')  # Default use Ollama
-            ollama_url = params.get('ollama_url', None)
             ollama_model = params.get('ollama_model', None)
             try:
                 chunks_text = ChunkingService.semantic_chunk(
                     content, chunk_size, model, 
-                    ollama_url=ollama_url,
                     ollama_model=ollama_model
                 )
             except Exception as e:
@@ -544,19 +541,76 @@ class ChunkingService:
     
     @staticmethod
     def get_chunk_statistics(chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Get chunk statistics from chunks list"""
+        """
+        Get comprehensive statistics about chunks (Layer 1: Chunk Quality)
+        
+        Based on the guide: "Evaluating Embedding Quality Before Ingesting into Vector Database"
+        """
         if not chunks:
             return {
                 'total_chunks': 0,
                 'avg_len': 0,
                 'min_len': 0,
-                'max_len': 0
+                'max_len': 0,
+                'median_len': 0,
+                'std_len': 0
             }
         
-        lengths = [chunk['len_chars'] for chunk in chunks]
-        return {
-            'total_chunks': len(chunks),
-            'avg_len': round(sum(lengths) / len(lengths), 2) if lengths else 0,
-            'min_len': min(lengths) if lengths else 0,
-            'max_len': max(lengths) if lengths else 0
-        }
+        lengths = [chunk.get('len_chars', len(chunk.get('text', ''))) for chunk in chunks]
+        
+        if HAS_NUMPY and lengths:
+            lengths_array = np.array(lengths)
+            return {
+                'total_chunks': len(chunks),
+                'avg_len': round(float(np.mean(lengths_array)), 2),
+                'min_len': int(np.min(lengths_array)),
+                'max_len': int(np.max(lengths_array)),
+                'median_len': round(float(np.median(lengths_array)), 2),
+                'std_len': round(float(np.std(lengths_array)), 2)
+            }
+        else:
+            # Fallback without numpy
+            sorted_lengths = sorted(lengths) if lengths else []
+            return {
+                'total_chunks': len(chunks),
+                'avg_len': round(sum(lengths) / len(lengths), 2) if lengths else 0,
+                'min_len': min(lengths) if lengths else 0,
+                'max_len': max(lengths) if lengths else 0,
+                'median_len': sorted_lengths[len(sorted_lengths) // 2] if sorted_lengths else 0,
+                'std_len': 0  # Would need numpy for proper std calculation
+            }
+    
+    @staticmethod
+    def evaluate_boundary_score_fast(chunks: List[Dict[str, Any]], original_text: str = None) -> Dict[str, Any]:
+        """
+        Fast boundary score evaluation without embeddings
+        Uses simple punctuation-based metric: percentage of chunks ending with proper punctuation
+        """
+        if not chunks:
+            return {
+                'success': False,
+                'score': None,
+                'error': 'No chunks to evaluate'
+            }
+        
+        try:
+            # Count chunks ending with proper punctuation (. ! ?)
+            good_endings = sum(1 for chunk in chunks if chunk['text'].strip() and chunk['text'].strip()[-1] in '.!?')
+            boundary_score = good_endings / len(chunks) if chunks else 0.0
+            
+            return {
+                'success': True,
+                'score': round(boundary_score, 4),
+                'method': 'fast',
+                'good_endings': good_endings,
+                'total_chunks': len(chunks),
+                'description': 'Boundary quality đo lường phần trăm chunks kết thúc bằng dấu câu đúng (. ! ?). Điểm số cao hơn (≥0.8) nghĩa là ranh giới chunks tốt hơn.'
+            }
+        except Exception as e:
+            logger.error(f"Error calculating fast boundary score: {e}")
+            return {
+                'success': False,
+                'score': None,
+                'error': str(e)
+            }
+    
